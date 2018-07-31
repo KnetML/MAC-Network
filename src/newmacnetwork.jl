@@ -126,7 +126,7 @@ function control_unit(w,ci₋1,qi,cws,pad;train=false,tap=nothing)
     else
         cvi    = reshape(softmax(cvis_2d,2),(1,B,T)) #eq c2.2
     end
-    tap!=nothing && get!(tap,"w_attn_$(tap["cnt"])",reshape(cvi,B,T))
+    tap!=nothing && get!(tap,"w_attn_$(tap["cnt"])",Array(reshape(cvi,B,T)))
     #cvi       : 1 x B x T
     ci         = reshape(sum(cvi.*cws,3),(d,B)) #eq c2.3
 end
@@ -166,7 +166,7 @@ function read_unit(w,mi₋1,ci,KBhw,KBhw′′;train=false,mdrop=0.0,attdrop=0.0
     #IcmKB     : B x N
     mvi             = reshape(softmax(IcmKB,2),(1,B,N)) #eq r3.2
     #mvi       : 1 x B x N
-    tap!=nothing && get!(tap,"KB_attn_$(tap["cnt"])",reshape(mvi,B,N))
+    tap!=nothing && get!(tap,"KB_attn_$(tap["cnt"])",Array(reshape(mvi,B,N)))
     mnew            = reshape(sum(mvi.*KBhw,3),(d,B)) #eq r3.3
 end
 
@@ -321,6 +321,12 @@ function forward_net(w,r,qs,KB,batchSizes,pads,xB;answers=nothing,p=12,tap=nothi
     end
 end
 
+function invert(vocab)
+       int2tok = Array{String}(length(vocab))
+       for (k,v) in vocab; int2tok[v+1] = k; end
+       return int2tok
+end
+
 function init_network(vocab_size,embed_size,d;p=12,loadresnet=false,selfattn=false,gating=false)
     if loadresnet
         rsnt,m,meta = load_resnet(atype;stage=3);
@@ -375,7 +381,7 @@ function getDicts(dhome,dicfile)
     dic  = JSON.parsefile(dhome*dicfile*".json")
     qvoc = dic["word_dic"]
     qvoc["__unk__"] = 0
-    avoc = dic["answerdic"]
+    avoc = dic["answer_dic"]
     i2w  = invert(qvoc)
     i2a  = invert(avoc)
     return qvoc,avoc,i2w,i2a
@@ -443,7 +449,7 @@ function miniBatch(data;shfl=true,srtd=false,B=32)
                 break;
             end
         end
-        push!(batchs,(images,qs,answers,batchSizes,pads,families)
+        push!(batchs,(images,qs,answers,batchSizes,pads,families))
     end
     return batchs
 end
@@ -602,6 +608,7 @@ function visualize(w,r,feat,question)
     batchSizes = ones(Int,length(question))
     Kxs        = convert(atype,feat)
     results    = Dict()
+    results["cnt"] = 1
     forward_net(w,r,question,Kxs,batchSizes,pad,KxB;tap=results)
     prediction = indmax(results["y"])
     return results,prediction
