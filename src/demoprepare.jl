@@ -1,5 +1,5 @@
 using JSON,JLD
-dhome    = "../data/"
+dhome    = ARGS[1]
 trgthome = dhome * "demo/"
 valfile  = dhome * "val.json"
 dicfile  = dhome * "dic.json"

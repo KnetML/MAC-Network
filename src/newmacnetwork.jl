@@ -49,35 +49,51 @@ function process_question(w,r,words,batchSizes;train=false,qdrop=0.0,embdrop=0.0
     if train
          wordemb = dropout(wordemb,embdrop)
     end
-
-    y,hyout,_,rs = rnnforw(r,w[2],wordemb;batchSizes=batchSizes,hy=true,cy=false)
+    
+    B = batchSizes[1]
+    eqbatches = all(batchSizes.==B)
+    
+    if eqbatches
+        wordemb      = reshape(wordemb,size(wordemb,1),1,size(wordemb,2))
+        y,hyout,_,rs = rnnforw(r,w[2],wordemb;hy=true,cy=false)
+    else
+        y,hyout,_,rs = rnnforw(r,w[2],wordemb;batchSizes=batchSizes,hy=true,cy=false)
+    end
+   
     q            = vcat(hyout[:,:,1],hyout[:,:,2])
 
     if train
            q  = dropout(q,qdrop)
     end
+    
+    if !eqbatches
+        indices      = batchSizes2indices(batchSizes)
+        lngths       = length.(indices)
+        Tmax         = maximum(lngths)
+        td,B         = size(q)
+        d            = div(td,2)
+        cw           = Any[];
 
-    indices      = batchSizes2indices(batchSizes)
-    lngths       = length.(indices)
-    Tmax         = maximum(lngths)
-    td,B         = size(q)
-    d            = div(td,2)
-    cw           = Any[];
-
-    for i=1:length(indices)
-        y1 = y[:,indices[i]]
-        df = Tmax-lngths[i]
-        if df > 0
-            cpad = zeros(Float32,2d,df)
-            kpad = KnetArray(cpad) ## look at similar
-            ypad = hcat(y1,kpad)
-            push!(cw,ypad)
-        else
-            push!(cw,y1)
+        for i=1:length(indices)
+            y1 = y[:,indices[i]]
+            df = Tmax-lngths[i]
+            if df > 0
+                cpad = zeros(Float32,2d,df)
+                kpad = atype(cpad) ## look at similar
+                ypad = hcat(y1,kpad)
+                push!(cw,ypad)
+            else
+                push!(cw,y1)
+            end
         end
+        cws_2d =  reshape(vcat(cw...),2d,B*Tmax)
+    else
+        B      = batchSizes[1]
+        Tmax   = length(batchSizes)
+        d      = div(size(q,1),2)
+        cws_2d = reshape(y,2d,B*Tmax)
     end
 
-    cws_2d =  reshape(vcat(cw...),2d,B*Tmax)
     cws_3d =  reshape(w[3]*cws_2d .+ w[4],(d,B,Tmax))
 
     return q,cws_3d;
@@ -321,11 +337,6 @@ function forward_net(w,r,qs,KB,batchSizes,pads,xB;answers=nothing,p=12,tap=nothi
     end
 end
 
-function invert(vocab)
-       int2tok = Array{String}(length(vocab))
-       for (k,v) in vocab; int2tok[v+1] = k; end
-       return int2tok
-end
 
 function init_network(vocab_size,embed_size,d;p=12,loadresnet=false,selfattn=false,gating=false)
     if loadresnet
@@ -377,10 +388,16 @@ function getQdata(dhome,set)
     JSON.parsefile(dhome*set*".json")
 end
 
+
+function invert(vocab)
+       int2tok = Array{String}(length(vocab))
+       for (k,v) in vocab; int2tok[v] = k; end
+       return int2tok
+end
+
 function getDicts(dhome,dicfile)
     dic  = JSON.parsefile(dhome*dicfile*".json")
     qvoc = dic["word_dic"]
-    qvoc["__unk__"] = 0
     avoc = dic["answer_dic"]
     i2w  = invert(qvoc)
     i2a  = invert(avoc)
