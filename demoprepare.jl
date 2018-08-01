@@ -51,4 +51,4 @@ mkdir(valimgs)
 
 getdemo(valfile)
 cp(dicfile,trgthome  * "dic.json";remove_destination=true)
-run(`tar -zcvf $(dhome)demo.tar $(trgthome)`)
+run(`tar -cvzf demo.tgz $(trgthome)`)
