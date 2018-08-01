@@ -1,4 +1,5 @@
 using JSON,JLD,Knet
+include("loss.jl")
 
 if !isdefined(Main,:atype)
     global atype = KnetArray{Float32}
@@ -49,23 +50,23 @@ function process_question(w,r,words,batchSizes;train=false,qdrop=0.0,embdrop=0.0
     if train
          wordemb = dropout(wordemb,embdrop)
     end
-    
+
     B = batchSizes[1]
     eqbatches = all(batchSizes.==B)
-    
+
     if eqbatches
         wordemb      = reshape(wordemb,size(wordemb,1),1,size(wordemb,2))
         y,hyout,_,rs = rnnforw(r,w[2],wordemb;hy=true,cy=false)
     else
         y,hyout,_,rs = rnnforw(r,w[2],wordemb;batchSizes=batchSizes,hy=true,cy=false)
     end
-   
+
     q            = vcat(hyout[:,:,1],hyout[:,:,2])
 
     if train
            q  = dropout(q,qdrop)
     end
-    
+
     if !eqbatches
         indices      = batchSizes2indices(batchSizes)
         lngths       = length.(indices)
@@ -378,9 +379,13 @@ function savemodel(filename,w,wrun,r,opts,p)
     save(filename,"w",w,"wrun",wrun,"r",r,"opts",opts,"p",p)
 end
 
-function loadmodel(filename)
+function loadmodel(filename;onlywrun=false)
     d = load(filename)
-    w=d["w"];wrun=d["wrun"];r=d["r"];opts=d["opts"];p=d["p"];
+    if onlywrun
+        wrun=d["wrun"];r=d["r"];opts=nothing;w=nothing;p=d["p"]
+    else
+        w=d["w"];wrun=d["wrun"];r=d["r"];opts=d["opts"];p=d["p"];
+    end
     return w,wrun,r,opts,p;
 end
 
@@ -619,18 +624,36 @@ function validate(mfile,dhome)
 end
 
 
-function visualize(w,r,feat,question)
+function singlerun(w,r,feat,question;p=12)
     KxB        = atype(ones(Float32,1,1))
     pad        = nothing
     batchSizes = ones(Int,length(question))
     Kxs        = convert(atype,feat)
     results    = Dict()
     results["cnt"] = 1
-    forward_net(w,r,question,Kxs,batchSizes,pad,KxB;tap=results)
+    forward_net(w,r,question,Kxs,batchSizes,pad,KxB;tap=results,p=p)
     prediction = indmax(results["y"])
     return results,prediction
 end
 
+function visualize(img,results;p=12)
+    s_y,s_x = size(img)./14
+    for k=1:p
+        α = results["w_attn_$(k)"][:]
+        println("step_$(k) most attn. wrds: ",i2w[question[sortperm(α;rev=true)[1:2]]])
+        flush(STDOUT)
+        display([RGB{N0f8}(α[i],α[i],α[i]) for i=1:length(α)]);
+        hsvimg = convert.(HSV,img);
+        attn = results["KB_attn_$(k)"]
+        for i=1:14,j=1:14
+            rngy          = floor(Int,(i-1)*s_y+1):floor(Int,min(i*s_y,320))
+            rngx          = floor(Int,(j-1)*s_x+1):floor(Int,min(j*s_x,480))
+            hsvimg[rngy,rngx]  = scalepixel.(hsvimg[rngy,rngx],attn[sub2ind((14,14),i,j)])
+        end
+        display(hsvimg)
+    end
+end
+
 function scalepixel(pixel,scaler)
-     return HSV(pixel.h,pixel.s,pixel.v+scaler)
+     return HSV(pixel.h,pixel.s,pixel.v+2*scaler)
 end
