@@ -9,7 +9,7 @@ julia requirements.jl
 
 ## Demo
 ### Getting Data
-`demosetup` script downloads a pre-trained model and sample CLEVR data from our servers. It makes total 352MB download.
+`demosetup` script downloads a pre-trained model and sample CLEVR data from our servers. It makes ~127mb total download.
 ```SHELL
 julia demosetup.jl
 ```
