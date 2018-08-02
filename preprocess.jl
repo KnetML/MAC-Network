@@ -11,18 +11,16 @@ function processquestions(dhome, set; word_dic=Dict(), answer_dic=Dict())
         qtokens = map(x->get!(word_dic,x,length(word_dic)+1),words)
         atoken  = get!(answer_dic,question["answer"],length(answer_dic)+1)
         push!(result,(question["image_filename"],qtokens,atoken,question["question_family_index"]))
-	next!(p)
-     end		
-
-     open("data2/$(set).json", "w") do f
-        write(f,json(result))
-     end
+	    next!(p)
+    end
+    open("data/$(set).json", "w") do f
+        rite(f,json(result))
+    end
 
      return word_dic, answer_dic
 end
 
-function main(args)
-    println(args)
+function preprocess(args)
     root       = args[1]
     adic       = Dict()
     wdic       = Dict()
@@ -31,11 +29,12 @@ function main(args)
         wdic = dics["word_dic"]
         adic = dics["answer_dic"]
     end
+    info("Parsing training questions...")
     processquestions(root, "train";word_dic=wdic, answer_dic=adic)
+    info("Parsing validation questions...")
     processquestions(root, "val"  ;word_dic=wdic, answer_dic=adic)
 
-    open("data2/dic.json", "w") do f
+    open("data/dic.json", "w") do f
         write(f,json(Dict("word_dic"=>wdic,"answer_dic"=>adic)))
     end
 end
-
