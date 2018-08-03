@@ -4,8 +4,13 @@ else
     CLEVR_HOME = ARGS[1]
 end
 
+println(CLEVR_HOME)
+
+info("Checking dependencies...")
+include("requirements.jl")
+
 include("preprocess.jl")
-info("Starting to preprocess CLEVR questions @: $(clevrhome)/questions ")
+info("Starting to preprocess CLEVR questions @: $(CLEVR_HOME)/questions ")
 info("Training and validation questions will be processed...")
 if isfile("data/train.json") && isfile("data/val.json")
     info("You already had processed questions in your data folder. Do you want to re-process the data? (yes or no)")
@@ -15,7 +20,7 @@ else
 end
 
 include("extract_features.jl")
-info("Starting to preprocess CLEVR images @: $(clevrhome)/images ")
+info("Starting to preprocess CLEVR images @: $(CLEVR_HOME)/images ")
 info("Training and validation images will be processed...")
 
 if isfile("data/train.bin") && isfile("data/val.bin")

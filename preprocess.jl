@@ -14,7 +14,7 @@ function processquestions(dhome, set; word_dic=Dict(), answer_dic=Dict())
 	    next!(p)
     end
     open("data/$(set).json", "w") do f
-        rite(f,json(result))
+        write(f,json(result))
     end
 
      return word_dic, answer_dic
