@@ -1,4 +1,4 @@
-using JSON,JLD,Knet
+using JSON,JLD,HDF5,Knet
 include("loss.jl")
 
 if !isdefined(Main,:atype)
@@ -409,9 +409,13 @@ function getDicts(dhome,dicfile)
     return qvoc,avoc,i2w,i2a
 end
 
-function loadFeatures(dhome,set)
-    feats    = reinterpret(Float32,read(open(dhome*set*".bin")))
-    reshape(feats,(14,14,1024,div(length(feats),200704)))
+function loadFeatures(dhome,set;h5=false)
+    if h5
+        return h5open(dhome*set*".hdf5","r")["data"]
+    else
+        feats = reinterpret(Float32,read(open(dhome*set*".bin")))
+        return reshape(feats,(14,14,1024,div(length(feats),200704)))
+    end
 end
 
 function miniBatch(data;shfl=true,srtd=false,B=32)
@@ -476,11 +480,11 @@ function miniBatch(data;shfl=true,srtd=false,B=32)
     return batchs
 end
 
-function loadTrainingData(dhome="data/")
-    info("Loading pretrained features for train&val sets.
-    It requires minimum 70GB RAM!!!")
-    trnfeats = loadFeatures(dhome,"train")
-    valfeats = loadFeatures(dhome,"val")
+function loadTrainingData(dhome="data/";h5=false)
+    !h5 && info("Loading pretrained features for train&val sets.
+                It requires minimum 70GB RAM!!!")
+    trnfeats = loadFeatures(dhome,"train";h5=h5)
+    valfeats = loadFeatures(dhome,"val";h5=h5)
     info("Loading questions ...")
     trnqstns = getQdata(dhome,"train")
     valqstns = getQdata(dhome,"val")
@@ -536,9 +540,16 @@ function modelrun(w,r,opts,data,feats;p=12,train=false,wrun=nothing,ema=Float32(
         end
 
         X = Any[];
-        for k=1:B
+        if (typeof(feats) <: Array)
+            for k=1:B
                push!(X,view(featdict,:,:,:,filenames[k]))
+            end
+        else
+            for k=1:B
+               push!(X,getindex(featdict,:,:,:,filenames[k]))
+            end
         end
+
         xs = cat(4,X...)
 
         Kxs  = convert(atype,xs)
