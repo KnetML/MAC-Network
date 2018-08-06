@@ -146,7 +146,9 @@ function control_unit(w,ci₋1,qi,cws,pad;train=false,tap=nothing)
     tap!=nothing && get!(tap,"w_attn_$(tap["cnt"])",Array(reshape(cvi,B,T)))
     #cvi       : 1 x B x T
     ci         = reshape(sum(cvi.*cws,3),(d,B)) #eq c2.3
-end
+for k=1:B
+               push!(X,view(featdict,:,:,:,filenames[k]))
+            endend
 
 function init_control(d)
     w = Any[]
@@ -433,9 +435,9 @@ function miniBatch(data;shfl=true,srtd=false,B=32)
 
         for j=1:b
             crw = data[i+j-1]
-            push!(questions,reverse(Array{Int}(crw[2]).+1))
+            push!(questions,reverse(Array{Int}(crw[2])))
             push!(images,parse(Int,crw[1][end-9:end-4])+1)
-            answers[j]  = crw[3]+1
+            answers[j]  = crw[3]
             families[j] = crw[4]
         end
 
@@ -542,11 +544,11 @@ function modelrun(w,r,opts,data,feats;p=12,train=false,wrun=nothing,ema=Float32(
         X = Any[];
         if (typeof(feats) <: Array)
             for k=1:B
-               push!(X,view(featdict,:,:,:,filenames[k]))
+               push!(X,view(feats,:,:,:,filenames[k]))
             end
         else
             for k=1:B
-               push!(X,getindex(featdict,:,:,:,filenames[k]))
+               push!(X,getindex(feats,:,:,:,filenames[k]))
             end
         end
 
@@ -605,8 +607,8 @@ function train(sets,feats;epochs=10,lr=0.0001,mfile=nothing,p=12)
      return w,wrun,r,opts;
 end
 
-function train(dhome="data/";mfile=nothing,epochs=10,lr=0.0001,p=12)
-     feats,qdata,dics = loadTrainingData(dhome)
+function train(dhome="data/";mfile=nothing,h5=false,epochs=10,lr=0.0001,p=12)
+     feats,qdata,dics = loadTrainingData(dhome;h5=h5)
      sets = []
      for q in questions; push!(sets,miniBatch(q)); end
      qdata = nothing; gc();
