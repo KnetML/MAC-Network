@@ -146,9 +146,7 @@ function control_unit(w,ci₋1,qi,cws,pad;train=false,tap=nothing)
     tap!=nothing && get!(tap,"w_attn_$(tap["cnt"])",Array(reshape(cvi,B,T)))
     #cvi       : 1 x B x T
     ci         = reshape(sum(cvi.*cws,3),(d,B)) #eq c2.3
-for k=1:B
-               push!(X,view(featdict,:,:,:,filenames[k]))
-            endend
+end
 
 function init_control(d)
     w = Any[]
