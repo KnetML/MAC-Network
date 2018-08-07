@@ -146,7 +146,9 @@ function control_unit(w,ci₋1,qi,cws,pad;train=false,tap=nothing)
     tap!=nothing && get!(tap,"w_attn_$(tap["cnt"])",Array(reshape(cvi,B,T)))
     #cvi       : 1 x B x T
     ci         = reshape(sum(cvi.*cws,3),(d,B)) #eq c2.3
-end
+for k=1:B
+               push!(X,view(featdict,:,:,:,filenames[k]))
+            endend
 
 function init_control(d)
     w = Any[]
@@ -604,6 +606,7 @@ function train(sets,feats;epochs=10,lr=0.0001,mfile=nothing,p=12)
      train!(w,wrun,r,opts,sets,feats;epochs=10,p=p)
      return w,wrun,r,opts;
 end
+
 
 function train(dhome="data/";h5=false,mfile=nothing,epochs=10,lr=0.0001,p=12)
      feats,qdata,dics = loadTrainingData(dhome;h5=h5)
