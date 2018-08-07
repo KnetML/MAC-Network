@@ -50,12 +50,12 @@ function process_question(w,r,words,batchSizes;train=false,qdrop=0.0,embdrop=0.0
     if train
          wordemb = dropout(wordemb,embdrop)
     end
-
+    
     B = batchSizes[1]
     eqbatches = all(batchSizes.==B)
 
     if eqbatches
-        wordemb      = reshape(wordemb,size(wordemb,1),1,size(wordemb,2))
+        wordemb      = reshape(wordemb,size(wordemb,1),B,size(wordemb,2))
         y,hyout,_,rs = rnnforw(r,w[2],wordemb;hy=true,cy=false)
     else
         y,hyout,_,rs = rnnforw(r,w[2],wordemb;batchSizes=batchSizes,hy=true,cy=false)
@@ -330,7 +330,7 @@ function forward_net(w,r,qs,KB,batchSizes,pads,xB;answers=nothing,p=12,tap=nothi
     y = output_unit(w[end-5:end-2],q,mi;train=train)
 
     if answers==nothing
-        predmat = Array{Float32}(y)
+        predmat = Array{Float32}(softmax(y))
         tap!=nothing && get!(tap,"y",predmat)
         return mapslices(indmax,predmat,1)[1,:]
     else
@@ -433,9 +433,9 @@ function miniBatch(data;shfl=true,srtd=false,B=32)
 
         for j=1:b
             crw = data[i+j-1]
-            push!(questions,reverse(Array{Int}(crw[2]).+1))
+            push!(questions,reverse(Array{Int}(crw[2])))
             push!(images,parse(Int,crw[1][end-9:end-4])+1)
-            answers[j]  = crw[3]+1
+            answers[j]  = crw[3]
             families[j] = crw[4]
         end
 
@@ -542,11 +542,11 @@ function modelrun(w,r,opts,data,feats;p=12,train=false,wrun=nothing,ema=Float32(
         X = Any[];
         if (typeof(feats) <: Array)
             for k=1:B
-               push!(X,view(featdict,:,:,:,filenames[k]))
+               push!(X,view(feats,:,:,:,filenames[k]))
             end
         else
             for k=1:B
-               push!(X,getindex(featdict,:,:,:,filenames[k]))
+               push!(X,getindex(feats,:,:,:,filenames[k]))
             end
         end
 
@@ -605,10 +605,10 @@ function train(sets,feats;epochs=10,lr=0.0001,mfile=nothing,p=12)
      return w,wrun,r,opts;
 end
 
-function train(dhome="data/";mfile=nothing,epochs=10,lr=0.0001,p=12)
-     feats,qdata,dics = loadTrainingData(dhome)
+function train(dhome="data/";h5=false,mfile=nothing,epochs=10,lr=0.0001,p=12)
+     feats,qdata,dics = loadTrainingData(dhome;h5=h5)
      sets = []
-     for q in questions; push!(sets,miniBatch(q)); end
+     for q in qdata; push!(sets,miniBatch(q)); end
      qdata = nothing; gc();
      w,wrun,r,opts = train(sets,feats;epochs=epochs,lr=lr,mfile=mfile,p=p)
      return w,wrun,r,opts,sets,feats,dics;
@@ -629,7 +629,7 @@ function validate(mfile,dhome)
      valfeats   = loadFeatures(dhome,"val")
      qdata      = getQdata(dhome,"val")
      dics       = getDicts(dhome,"dic")
-     valset     = minibatch(qdata)
+     valset     = miniBatch(qdata)
      modelrun(wrun,r,nothing,valset,valfeats;train=false)
      return wrun,r,valset,valfeats
 end
