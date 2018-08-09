@@ -26,45 +26,9 @@ trnfeats = loadFeatures(o[:dhome],"train";h5=o[:h5])
 valfeats = loadFeatures(o[:dhome],"val";h5=o[:h5])
 gc();Knet.gc();gc();
 
-for i=1:o[:epochs]		
-       modelrun(w,r,opts,sets[1],trnfeats,o,wrun;train=true)   
-       if iseven(i)	
+for i=1:o[:epochs]
+       modelrun(w,r,opts,sets[1],trnfeats,o,wrun;train=true)
+       if iseven(i)
             modelrun(wrun,r,opts,sets[2],valfeats,o;train=false)
        end
 end
-
-#getter(id) = view(trnfeats,:,:,:,id)
-#ids,questions,answers,batchSizes,pad,families = rand(sets[1])
-# #MEMORY LEAK
-# for i=1:250
-#            ids,questions,answers,batchSizes,pad,families = rand(sets[1])
-# 	   B     = batchSizes[1]
-#            xB    = ones(Float32,1,B)
-#            xS    = batcher(map(getter,ids))
-#            xP    = pad==nothing ? nothing : pad*Float32(1e22)
-#            grads = lossfun(w,r,questions,batchSizes,xS,xB,xP;answers=answers,p=o[:p])
-# end
-
-# #NO LEAK
-# for i=1:250
-#            ids,questions,answers,batchSizes,pad,families = rand(sets[1])
-# 	   B     = batchSizes[1]
-#            xB    = ones(Float32,1,B)
-#            xS    = batcher(map(getter,ids))
-#            xP    = pad==nothing ? nothing : pad*Float32(1e22)
-#            forward_net(w,r,questions,batchSizes,copy(xS),copy(xB),xP;answers=answers,p=o[:p])
-# end
-
-# #NO LEAK
-# for i=1:500
-#            ids,questions,answers,batchSizes,pad,families = rand(sets[1])
-# 	   B     = batchSizes[1]
-#            xB    = ones(Float32,1,B)
-#            xS    = batcher(map(getter,ids))
-#            xP    = pad==nothing ? nothing : pad*Float32(1e22)
-# end
-
-# #NO LEAK
-# for i=1:250
-#            grads = lossfun(w,r,questions,batchSizes,xS,xB,xP;answers=answers,p=o[:p])
-# end

@@ -1,3 +1,4 @@
+include("requirements.jl")
 server = "ai.ku.edu.tr/"
 if length(ARGS)==0
     error("clevr home folder is not specified. Pre-processed data will be downloaded from the servers(70GB)? (yes or no)")
