@@ -1,5 +1,5 @@
 using JSON,JLD,HDF5,Knet,AutoGrad
-#include("loss.jl")
+include("loss.jl")
 if !isdefined(Main,:atype)
     global atype = KnetArray{Float32}
 end
@@ -66,7 +66,8 @@ function process_question(w,r,words,batchSizes;train=false,qdrop=0.0,embdrop=0.0
         y1 = y[:,indices[i]]
         df = Tmax-lngths[i]
         if df > 0
-            kpad = similar(y1,2d,df)
+	    cpad = zeros(Float32,2d,df)
+            kpad = atype(cpad)
             ypad = hcat(y1,kpad)
             push!(cw,ypad)
         else
@@ -267,7 +268,7 @@ function forward_net(w,r,qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
 
     train         = answers!=nothing
     #STEM Processing
-    KBhw          = postpocess_kb(w[1:4],atype(xS);train=train)
+    KBhw          = postpocess_kb(w[1:4],xS;train=train)
 
     #Read Unit Precalculations
     d,B,N         = size(KBhw)
@@ -276,12 +277,13 @@ function forward_net(w,r,qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
 
     #Question Unit
     q,cws         = process_question(w[5:8],r,qs,batchSizes;train=train)
+
     qi_c          = w[9]*q .+ w[10]
 
     #Memory Initialization
-    xB            = atype(xB)
     ci            = w[end-1]*xB
     mi            = w[end]*xB
+
     if selfattn
         cj=ci; mj=mi
     else
@@ -289,7 +291,6 @@ function forward_net(w,r,qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
     end
 
     #PAD for Word Attention
-    pad = xP != nothing ? atype(xP):nothing
 
     #MAC Units
     wmac          = w[11:end-6]
@@ -298,7 +299,7 @@ function forward_net(w,r,qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
         if train
             ci = dropout(ci,0.15); mi = dropout(mi,0.15)
         end
-        ci     = control_unit(wmac[1:4],ci,qi,cws,pad;train=train,tap=tap)
+        ci     = control_unit(wmac[1:4],ci,qi,cws,xP;train=train,tap=tap)
         m_new  = read_unit(wmac[5:11],mi,ci,KBhw,KBhw′′;train=train,tap=tap)
         mi     = write_unit(wmac[12:end],m_new,mi,mj,ci,cj;train=train,selfattn=selfattn,gating=gating)
         if selfattn
@@ -306,7 +307,9 @@ function forward_net(w,r,qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
         end
     end
 
+
     y = output_unit(w[end-5:end-2],q,mi;train=train)
+
 
     if answers==nothing
         predmat = Array{Float32}(y)
@@ -353,7 +356,7 @@ function init_state(d,B;initial=:zero)
     return atype(x)
 end
 
-lossfun = grad(forward_net)
+lossfun = gradloss(forward_net)
 
 function savemodel(filename,w,wrun,r,opts,o)
     save(filename,"w",w,"wrun",wrun,"r",r,"opts",opts,"o",o)
@@ -508,13 +511,16 @@ function modelrun(w,r,opts,data,feats,o,wrun=nothing;train=false)
     for i=1:L
         ids,questions,answers,batchSizes,pad,families = data[i]
         B    = batchSizes[1]
-
-        xB   = ones(Float32,1,B)
-        xS   = batcher(map(getter,ids))
-        xP   = pad==nothing ? nothing : pad*Float32(1e22)
+        xB   = atype(ones(Float32,1,B))
+        xS   = atype(batcher(map(getter,ids)))
+        xP   = pad==nothing ? nothing : atype(pad*Float32(1e22))
 
         if train
-            grads  = lossfun(w,r,questions,batchSizes,xS,xB,xP;answers=answers,p=o[:p])
+            grads,lss = lossfun(w,r,questions,batchSizes,xS,xB,xP;answers=answers,p=o[:p])
+
+	    cnt +=lss*B
+	    total += B
+
             for (cu,gr) in zip(cumgrads,grads)
                 axpy!(0.5f0,gr,cu);
             end
@@ -574,7 +580,7 @@ function train(dhome="data/",o=nothing)
          o=Dict(:h5=>false,:mfile=>nothing,:epochs=>10,
                 :lr=>0.0001,:p=>12,:ema=>0.999f0,:batchsize=>32,
                 :selfattn=>false,:gating=>false,:d=>512,
-                :shuffle=>true,:sorted=>false,
+                :shuffle=>true,:sorted=>false,:prefix=>string(now())[1:10],
                 :vocab_size=>90,:embed_size=>300, :dhome=>"data/", :loadresnet=>false)
      end
      feats,qdata,dics = loadTrainingData(dhome;h5=o[:h5])
