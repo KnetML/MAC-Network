@@ -1,5 +1,15 @@
+server = "ai.ku.edu.tr/"
 if length(ARGS)==0
-    error("clevr home folder is not specified!")
+    error("clevr home folder is not specified. Pre-processed data will be downloaded from the servers(70GB)? (yes or no)")
+    if readline() == "yes"
+        !isfile("data/train.bin")  && download(server*"data/mac-network/train.bin","data/train.bin")
+        !isfile("data/val.bin")    && download(server*"data/mac-network/val.bin","data/val.bin")
+        !isfile("data/train.json") && download(server*"data/mac-network/train.json","data/train.json")
+        !isfile("data/val.json")   && download(server*"data/mac-network/val.json","data/val.json")
+        !isfile("data/dic.json")   && download(server*"data/mac-network/dic.json","data/dic.json")
+    else
+        error("No data available!")
+    end
 else
     CLEVR_HOME = ARGS[1]
 end

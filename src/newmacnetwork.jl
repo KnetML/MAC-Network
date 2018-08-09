@@ -1,4 +1,4 @@
-using JSON,JLD,HDF5,Knet,AutoGrad
+using JSON,JLD,HDF5,Knet
 include("loss.jl")
 if !isdefined(Main,:atype)
     global atype = KnetArray{Float32}
@@ -22,14 +22,14 @@ function prepocess_image(w,m,imgurl,avgimg;stage=3)
     return ResNetLib.resnet101(w,m,atype(img);stage=stage);
 end
 
-function postpocess_kb(w,x;train=false,pdrop=0.0)
-    # if train
-    #      x  = dropout(x,pdrop)
-    # end
+function postpocess_kb(w,x;train=false,pdrop=0)
+    if train
+         x  = dropout(x,pdrop)
+    end
     x  = elu.(conv4(w[1],x;padding=1,stride=1,mode=1) .+ w[2])
-    # if train
-    #      x  = dropout(x,pdrop)
-    # end
+    if train
+         x  = dropout(x,pdrop)
+    end
     x  = elu.(conv4(w[3],x;padding=1,stride=1,mode=1) .+ w[4])
     h,w,c,b = size(x)
     x  = reshape(x,h*w,c,b)
@@ -45,36 +45,53 @@ function init_postkb(d)
     return w
 end
 
-function process_question(w,r,words,batchSizes;train=false,qdrop=0.0,embdrop=0.0)
+function process_question(w,r,words,batchSizes;train=false,qdrop=0,embdrop=0)
     wordemb      = w[1][:,words]
-    # if train
-    #      wordemb = dropout(wordemb,embdrop)
-    # end
-    y,hyout,_,_ = rnnforw(r,w[2],wordemb;batchSizes=batchSizes,hy=true,cy=false)
+    if train
+         wordemb = dropout(wordemb,embdrop)
+    end
+
+    B = first(batchSizes)
+    eqbatches = last(batchSizes)==B
+
+    if !eqbatches
+        y,hyout,_,_ = rnnforw(r,w[2],wordemb;batchSizes=batchSizes,hy=true,cy=false)
+    else #This case is written for single batch run. I did not try in the training. However, it should work as expected.
+        wordemb      = reshape(wordemb,size(wordemb,1),B,div(size(wordemb,2),B))
+        y,hyout,_,rs = rnnforw(r,w[2],wordemb;hy=true,cy=false)
+    end
 
     q            = vcat(hyout[:,:,1],hyout[:,:,2])
-    # if train
-    #        q  = dropout(q,qdrop)
-    # end
-    indices      = batchSizes2indices(batchSizes)
-    lngths       = length.(indices)
-    Tmax         = maximum(lngths)
-    td,B         = size(q)
-    d            = div(td,2)
-    cw           = Any[];
-    for i=1:length(indices)
-        y1 = y[:,indices[i]]
-        df = Tmax-lngths[i]
-        if df > 0
-	    cpad = zeros(Float32,2d,df)
-            kpad = atype(cpad)
-            ypad = hcat(y1,kpad)
-            push!(cw,ypad)
-        else
-            push!(cw,y1)
-        end
+    if train
+           q  = dropout(q,qdrop)
     end
-    cws_2d =  reshape(vcat(cw...),2d,B*Tmax)
+
+    if !eqbatches
+
+        indices      = batchSizes2indices(batchSizes)
+        lngths       = length.(indices)
+        Tmax         = maximum(lngths)
+        td,B         = size(q)
+        d            = div(td,2)
+        cw           = Any[];
+        for i=1:length(indices)
+            y1 = y[:,indices[i]]
+            df = Tmax-lngths[i]
+            if df > 0
+	        cpad = zeros(Float32,2d,df)
+                kpad = atype(cpad)
+                ypad = hcat(y1,kpad)
+                push!(cw,ypad)
+            else
+                push!(cw,y1)
+            end
+        end
+        cws_2d =  reshape(vcat(cw...),2d,B*Tmax)
+    else
+        d      = div(size(y,1),2)
+        Tmax   = size(y,3) 
+        cws_2d = reshape(y,2d,B*Tmax)
+    end
     cws_3d =  reshape(w[3]*cws_2d .+ w[4],(d,B,Tmax))
     return q,cws_3d;
 end
@@ -122,7 +139,7 @@ function control_unit(w,ci₋1,qi,cws,pad;train=false,tap=nothing)
     else
         cvi    = reshape(softmax(cvis_2d,2),(1,B,T)) #eq c2.2
     end
-    #tap!=nothing && get!(tap,"w_attn_$(tap["cnt"])",Array(reshape(cvi,B,T)))
+    tap!=nothing && get!(tap,"w_attn_$(tap["cnt"])",Array(reshape(cvi,B,T)))
     #cvi       : 1 x B x T
     ci         = reshape(sum(cvi.*cws,3),(d,B)) #eq c2.3
 end
@@ -136,14 +153,14 @@ function init_control(d)
     return w
 end
 
-function read_unit(w,mi₋1,ci,KBhw,KBhw′′;train=false,mdrop=0.0,attdrop=0.0,tap=nothing)
+function read_unit(w,mi₋1,ci,KBhw,KBhw′′;train=false,mdrop=0,attdrop=0,tap=nothing)
     d,B,N          = size(KBhw)
     d,BN           = size(KBhw′′)
     #KBhw'     : d x B x N  := w[3] * khw + w[4]
     #KBhw''    : d x BN     := reshape(w[5] * khw + w[7]),(d,BN))
-    # if train
-    #     mi₋1       = dropout(mi₋1,mdrop)
-    # end
+    if train
+         mi₋1       = dropout(mi₋1,mdrop)
+    end
 
     mi_3d           = reshape(w[1]*mi₋1 .+ w[2],(d,B,1)) #eq r1.1
     #mi_3d     : d x B x 1
@@ -155,14 +172,14 @@ function read_unit(w,mi₋1,ci,KBhw,KBhw′′;train=false,mdrop=0.0,attdrop=0.0
     #ci_3d     : d x B x 1
     IcmKB_pre       = reshape(ci_3d .* ImKB′,(d,BN)) #eq r3.1.1
     #IcmKB_pre : d x BN
-    # if train
-    #      IcmKB_pre = dropout(IcmKB_pre,attdrop)#dropout(IcmKB_pre,0.15)
-    # end
+    if train
+          IcmKB_pre = dropout(IcmKB_pre,attdrop)#dropout(IcmKB_pre,0.15)
+    end
     IcmKB           = reshape(w[6] * IcmKB_pre  .+ w[7],(B,N)) #eq r3.1.2
     #IcmKB     : B x N
     mvi             = reshape(softmax(IcmKB,2),(1,B,N)) #eq r3.2
     #mvi       : 1 x B x N
-    #tap!=nothing && get!(tap,"KB_attn_$(tap["cnt"])",Array(reshape(mvi,B,N)))
+    tap!=nothing && get!(tap,"KB_attn_$(tap["cnt"])",Array(reshape(mvi,B,N)))
     mnew            = reshape(sum(mvi.*KBhw,3),(d,B)) #eq r3.3
 end
 
@@ -228,15 +245,6 @@ function init_write(d;selfattn=false,gating=false)
     return w
 end
 
-
-function mac(w,cw,qi,KBhw,KBhw′′,ci₋1,mi₋1,cj,mj,pad;train=false,selfattn=false,gating=false,tap=nothing)
-    ci     = control_unit(w[1:4],ci₋1,qi,cw,pad;train=train,tap=tap)
-    m_new  = read_unit(w[5:11],mi₋1,ci,KBhw,KBhw′′;train=train,tap=tap)
-    mi     = write_unit(w[12:end],m_new,mi₋1,mj,ci,cj;train=train,selfattn=selfattn,gating=gating)
-    #tap != nothing && (tap["cnt"]+=1)
-    return ci,mi
-end
-
 function init_mac(d;selfattn=false,gating=false)
    w  = Any[];
    append!(w,init_control(d))
@@ -245,11 +253,11 @@ function init_mac(d;selfattn=false,gating=false)
    return w
 end
 
-function output_unit(w,q,mp;train=false,pdrop=0.0)
+function output_unit(w,q,mp;train=false,pdrop=0)
   x  = elu.(w[1] * vcat(mp,q) .+ w[2])
-  # if train
-  #     x  = dropout(x,pdrop) #0.15
-  # end
+  if train
+      x  = dropout(x,pdrop) #0.15
+  end
   y  = w[3] * x .+ w[4]
 end
 
@@ -273,6 +281,11 @@ function forward_net(w,r,qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
     #Read Unit Precalculations
     d,B,N         = size(KBhw)
     KBhw_2d       = reshape(KBhw,(d,B*N))
+#   if train
+#        KBhw_2d   = dropout(KBhw_2d,0)
+#   end
+#   KBhw′_pre     = w[15]*KBhw_2d .+ w[16] # look if it is necessary
+#   KBhw′         = reshape(KBhw'_pre,(d,B,N))
     KBhw′′        = w[17]*KBhw_2d .+ w[18]
 
     #Question Unit
@@ -294,6 +307,7 @@ function forward_net(w,r,qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
 
     #MAC Units
     wmac          = w[11:end-6]
+    
     for i=1:p
         qi        = qi_c[(i-1)*d+1:i*d,:]
         if train
@@ -307,9 +321,7 @@ function forward_net(w,r,qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
         end
     end
 
-
     y = output_unit(w[end-5:end-2],q,mi;train=train)
-
 
     if answers==nothing
         predmat = Array{Float32}(y)
@@ -615,6 +627,7 @@ end
 function singlerun(w,r,feat,question;p=12,selfattn=false,gating=false)
     results        = Dict{String,Any}("cnt"=>1)
     batchSizes     = ones(Int,length(question))
+    xB             = atype(ones(Float32,1,1))
     forward_net(w,r,question,batchSizes,feat,xB,nothing;tap=results,p=p,selfattn=selfattn,gating=gating)
     prediction = indmax(results["y"])
     return results,prediction
