@@ -1,7 +1,8 @@
-using JSON,JLD,HDF5,Knet,Images
+#This implementation is same with https://github.com/rosinality/mac-network-pytorch
+using JSON,JLD2,HDF5,Knet,Images,Printf
 include("loss.jl")
 if !isdefined(Main,:atype)
-    global atype = gpu() < 0 ? Array{Float32}:KnetArray{Float32}
+    global atype = gpu() < 0 ? Array{Float32} : KnetArray{Float32}
 end
 init(o...)=atype(xavier(Float32,o...))
 bias(o...)=atype(zeros(Float32,o...))
@@ -141,7 +142,7 @@ function control_unit(w,ci₋1,qi,cws,pad;train=false,tap=nothing)
     end
     tap!=nothing && get!(tap,"w_attn_$(tap["cnt"])",Array(reshape(cvi,B,T)))
     #cvi       : 1 x B x T
-    ci         = reshape(sum(cvi.*cws,3),(d,B)) #eq c2.3
+    ci         = reshape(sum(cvi.*cws;dims=3),(d,B)) #eq c2.3
 end
 
 function init_control(d)
@@ -180,7 +181,7 @@ function read_unit(w,mi₋1,ci,KBhw,KBhw′′;train=false,mdrop=0,attdrop=0,tap
     mvi             = reshape(softmax(IcmKB,2),(1,B,N)) #eq r3.2
     #mvi       : 1 x B x N
     tap!=nothing && get!(tap,"KB_attn_$(tap["cnt"])",Array(reshape(mvi,B,N)))
-    mnew            = reshape(sum(mvi.*KBhw,3),(d,B)) #eq r3.3
+    mnew            = reshape(sum(mvi.*KBhw;dims=3),(d,B)) #eq r3.3
 end
 
 function init_read(d)
@@ -218,7 +219,7 @@ function write_unit(w,m_new,mi₋1,mj,ci,cj;train=false,selfattn=true,gating=tru
     #sa'       : 1 x B x T
     mj_3d      = reshape(mj,(d,B,T))
     #mj_3d     : d x B x T
-    mi_sa      = reshape(sum(sa′ .* mj_3d ,3),(d,B)) #eq w2.2
+    mi_sa      = reshape(sum(sa′ .* mj_3d;dims=3),(d,B)) #eq w2.2
     #m_sa      : d x B
     mi′′       = w[5] * mi_sa .+ w[6] .+ mi   #eq w2.3
     #mi′′      : d x B
@@ -227,7 +228,7 @@ function write_unit(w,m_new,mi₋1,mj,ci,cj;train=false,selfattn=true,gating=tru
 
     σci′       = sigm.(w[7] * ci .+ w[8])  #eq w3.1
     #σci′      : 1 x B
-    mi′′′      = (σci′ .* mi₋1) .+  ((1.-σci′) .* mi′′) #eq w3.2
+    mi′′′      = (σci′ .* mi₋1) .+  ((1 .- σci′) .* mi′′) #eq w3.2
 end
 
 function init_write(d;selfattn=false,gating=false)
@@ -327,7 +328,7 @@ function forward_net(w,r,qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
     if answers==nothing
         predmat = Array{Float32}(y)
         tap!=nothing && get!(tap,"y",predmat)
-        return mapslices(indmax,predmat,1)[1,:]
+        return mapslices(argmax,predmat;dims=1)[1,:]
     else
         return loss_layer(y,answers)
     end
@@ -376,12 +377,13 @@ function savemodel(filename,w,wrun,r,opts,o)
 end
 
 function loadmodel(filename;onlywrun=false)
-    d = load(filename)
     if onlywrun
-        wrun=d["wrun"];r=d["r"];opts=nothing;w=nothing;o=d["o"]
+        @load filename o wrun
+        w=opts=nothing
     else
-        w=d["w"];wrun=d["wrun"];r=d["r"];opts=d["opts"];o=d["o"];
+        @load filename w r o wrun opts
     end
+    r = Knet.RNN(o[:embed_size],o[:d],1,0.0,0,1,2,0,Float32,nothing,nothing,nothing,nothing,nothing)
     return w,wrun,r,opts,o;
 end
 
@@ -391,7 +393,7 @@ end
 
 
 function invert(vocab)
-       int2tok = Array{String}(length(vocab))
+       int2tok = Array{String}(undef,length(vocab))
        for (k,v) in vocab; int2tok[v] = k; end
        return int2tok
 end
@@ -476,24 +478,24 @@ function miniBatch(data;shfl=true,srtd=false,B=32)
 end
 
 function loadTrainingData(dhome="data/";h5=false)
-    !h5 && info("Loading pretrained features for train&val sets.
+    !h5 && println("Loading pretrained features for train&val sets.
                 It requires minimum 70GB RAM!!!")
     trnfeats = loadFeatures(dhome,"train";h5=h5)
     valfeats = loadFeatures(dhome,"val";h5=h5)
-    info("Loading questions ...")
+    println("Loading questions ...")
     trnqstns = getQdata(dhome,"train")
     valqstns = getQdata(dhome,"val")
-    info("Loading dictionaries ... ")
+    println("Loading dictionaries ... ")
     qvoc,avoc,i2w,i2a = getDicts(dhome,"dic")
     return (trnfeats,valfeats),(trnqstns,valqstns),(qvoc,avoc,i2w,i2a)
 end
 
 function loadDemoData(dhome="data/demo/")
-    info("Loading demo features ...")
+    println("Loading demo features ...")
     feats = loadFeatures(dhome,"demo")
-    info("Loading demo questions ...")
+    println("Loading demo questions ...")
     qstns = getQdata(dhome,"demo")
-    info("Loading dictionaries ...")
+    println("Loading dictionaries ...")
     dics = getDicts(dhome,"dic")
     return feats,qstns,dics
 end
@@ -553,19 +555,22 @@ function modelrun(w,r,opts,data,feats,o,wrun=nothing;train=false)
         if i % 100 == 0
             toc();tic();
             println(@sprintf("%.2f%% Completed & %.2f Accuracy|Loss",
-                             100i/L,train ? cnt/total:100cnt/total))
+                             100i/L,train ? cnt/total : 100cnt/total))
             flush(STDOUT)
         end
         if i % 2250 == 0
-            savemodel(o[:prefix]*".jld",w,wrun,r,opts,o);
-            info("model saved");flush(STDOUT);
+            savemodel(o[:prefix]*".jld2",w,wrun,r,opts,o);
+            @info "model saved";flush(STDOUT);
             gc(); Knet.gc(); gc();
         end
     end
+    savemodel(o[:prefix]*".jld2",w,wrun,r,opts,o);
+    @info "model saved";flush(STDOUT);
+    gc(); Knet.gc(); gc();
 end
 
 function train!(w,wrun,r,opts,sets,feats,o)
-    info("Training Starts....")
+    @info "Training Starts...."
     for i=1:o[:epochs]
         modelrun(w,r,opts,sets[1],feats[1],o,wrun;train=true)
         if iseven(i)
@@ -630,7 +635,7 @@ function singlerun(w,r,feat,question;p=12,selfattn=false,gating=false)
     batchSizes     = ones(Int,length(question))
     xB             = atype(ones(Float32,1,1))
     forward_net(w,r,question,batchSizes,feat,xB,nothing;tap=results,p=p,selfattn=selfattn,gating=gating)
-    prediction = indmax(results["y"])
+    prediction = argmax(results["y"])
     return results,prediction
 end
 
@@ -641,22 +646,25 @@ function visualize(img,results;p=12)
         top3    = sortperm(α;rev=true)[1:3]
         wattns  = map(x->@sprintf("%.2f%%",x),α[top3]*100)
         wrds    = i2w[question[top3]]
-        print_with_color(:yellow,"Top-3 Attended Words:\n";bold = true)
+        #printstyled("Top-3 Attended Words:\n";bold = true,color = :yellow)
+        print("Top-3 Attended Words:\n")
         println(join(zip(wrds,wattns),"\n"))
-        flush(STDOUT)
+        flush(stdout)
         # display([RGB{N0f8}(α[i],α[i],α[i]) for i=1:length(α)]);
-        print_with_color(:blue,"Image Attention Map: ";bold = true)
-        flush(STDOUT)
+        #printsyled("Image Attention Map: ";bold = true, color = :blue)
+        println("Image Attention Map: ")
+        flush(stdout)
         hsvimg = convert.(HSV,img);
         attn = results["KB_attn_$(k)"]
         for i=1:14,j=1:14
             rngy          = floor(Int,(i-1)*s_y+1):floor(Int,min(i*s_y,320))
             rngx          = floor(Int,(j-1)*s_x+1):floor(Int,min(j*s_x,480))
-            hsvimg[rngy,rngx]  = scalepixel.(hsvimg[rngy,rngx],attn[sub2ind((14,14),i,j)])
+            hsvimg[rngy,rngx]  = scalepixel.(hsvimg[rngy,rngx],attn[LinearIndices((1:14,1:14))[i,j]])
         end
         display(hsvimg)
     end
 end
+
 
 function scalepixel(pixel,scaler)
      return HSV(pixel.h,pixel.s,pixel.v+2*scaler)
