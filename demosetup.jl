@@ -14,5 +14,5 @@ if !isdir("data/demo")
 end
 if !isfile("models/macnet.jld")
     info("Downloading pre-trained model from our servers...")
-    download(server*"models/mac-network/demo_model.jld","models/macnet.jld")
+    download(server*"models/mac-network/macnet.jld","models/macnet.jld")
 end
