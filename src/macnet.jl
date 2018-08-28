@@ -1,5 +1,6 @@
 #This implementation is very similar to original implementation in https://github.com/stanfordnlp/mac-network
 using JSON,JLD2,HDF5,Knet,Images,Printf
+using Random
 include("loss.jl")
 if !isdefined(Main,:atype)
     global atype = gpu() < 0 ? Array{Float32} : KnetArray{Float32}
@@ -8,7 +9,7 @@ init(o...)=atype(xavier(Float32,o...))
 bias(o...)=atype(zeros(Float32,o...))
 
 function elu(x)
-    return relu(x) + (exp(min(0,x)) - 1)
+    return relu.(x) + (exp.(min.(0,x)) .- 1.0)
 end
 
 function load_resnet(atype;stage=3)
@@ -29,13 +30,13 @@ function postpocess_kb(w,x;train=false,pdrop=0)
         x  = dropout(x,0.18)
    end
 
-   x  = elu.(conv4(w[1],x;padding=1,stride=1) .+ w[2]) #relu -> elu
+   x  = elu(conv4(w[1],x;padding=1,stride=1) .+ w[2]) #relu -> elu
 
    if train
         x  = dropout(x,0.18)
    end
 
-   x  = elu.(conv4(w[3],x;padding=1,stride=1) .+ w[4]) #relu -> elu
+   x  = elu(conv4(w[3],x;padding=1,stride=1) .+ w[4]) #relu -> elu
 
    h,w,c,b = size(x)
    x  = reshape(x,h*w,c,b)
@@ -173,11 +174,11 @@ function read_unit(w,mi₋1,ci,KBhw′,KBhw′′;train=false,tap=nothing)
     #mi_3d     : d x B x 1
     ImKB       = reshape(mi_3d .* KBhw′,(d,BN)) # eq r1.2
     #ImKB      : d x BN
-    ImKB′      = reshape(elu.(w[7] * ImKB .+ KBhw′′),(d,B,N)) #eq r2
+    ImKB′      = reshape(elu(w[7] * ImKB .+ KBhw′′),(d,B,N)) #eq r2
     #ImKB'     : d x B x N
     ci_3d      = reshape(ci,(d,B,1))
     #ci_3d     : d x B x 1
-    IcmKB_pre  = elu.(reshape(ci_3d .* ImKB′,(d,BN))) #eq r3.1.1
+    IcmKB_pre  = elu(reshape(ci_3d .* ImKB′,(d,BN))) #eq r3.1.1
     #IcmKB_pre : d x BN
     if train
         IcmKB_pre = dropout(IcmKB_pre,0.15)#dropout(IcmKB_pre,0.15)
@@ -262,11 +263,11 @@ function init_mac(d;selfattn=false,gating=false)
 end
 
 function output_unit(w,q,mp;train=false)
-  input = vcat(elu.(w[1]*q .+ w[2]),mp)
+  input = vcat(elu(w[1]*q .+ w[2]),mp)
   # if train
   #     input = dropout(input,0.15)
   # end
-  x  = elu.(w[3] * input .+ w[4])
+  x  = elu(w[3] * input .+ w[4])
   # if train
   #   x  = dropout(x,0.15) #0.15
   # end
@@ -387,17 +388,17 @@ end
 lossfun = gradloss(forward_net)
 
 function savemodel(filename,w,wrun,r,opts,o)
-    save(filename,"w",w,"wrun",wrun,"r",r,"opts",opts,"o",o)
+    Knet.save(filename,"w",w,"wrun",wrun,"r",r,"opts",opts,"o",o)
 end
 
 function loadmodel(filename;onlywrun=false)
-    if onlywrun
-        @load filename o wrun
+    d = Knet.load(filename)
+    if onlywrun      
+        wrun=d["wrun"];o=d["o"];r=d["r"]
         w=opts=nothing
     else
-        @load filename w r o wrun opts
+        w=d["w"];r=d["r"];o=d["o"];wrun=d["wrun"];opts=d["opts"]
     end
-    r = Knet.RNN(o[:embed_size],o[:d],1,0.0,0,1,2,0,Float32,nothing,nothing,nothing,nothing,nothing)
     return w,wrun,r,opts,o;
 end
 
@@ -465,7 +466,7 @@ function miniBatch(data;shfl=true,srtd=false,B=32)
         pads = falses(b,Tmax)
 
         for k=1:b
-           pads[k,lngths[k]+1:Tmax]=true
+           pads[k,lngths[k]+1:Tmax].=true
         end
 
         if sum(pads)==0
@@ -515,7 +516,7 @@ function loadDemoData(dhome="data/demo/")
 end
 
 
-batchindex(xs, i) = (reverse(Base.tail(reverse(indices(xs))))..., i)
+batchindex(xs, i) = (reverse(Base.tail(reverse(axes(xs))))..., i)
 function batcher(xs)
     data = first(xs) isa AbstractArray ?
     similar(first(xs), size(first(xs))..., length(xs)) :
@@ -525,7 +526,8 @@ function batcher(xs)
     end
     return data
 end
-
+tic()  = time_ns();
+toc(t) = (time_ns()-t)*1e-9
 function modelrun(w,r,opts,data,feats,o,wrun=nothing;train=false)
     if train
         cumgrads = map(similar,w)
@@ -535,8 +537,8 @@ function modelrun(w,r,opts,data,feats,o,wrun=nothing;train=false)
 
     cnt=total=0.0;
     L = length(data)
-    println("Timer Starts");flush(stdout);tic();
-
+    println("Timer Starts");flush(stdout);
+    t = tic()
     for i=1:L
         ids,questions,answers,batchSizes,pad,families = data[i]
         B    = batchSizes[1]
@@ -567,7 +569,7 @@ function modelrun(w,r,opts,data,feats,o,wrun=nothing;train=false)
         end
 
         if i % 100 == 0
-            toc();tic();
+            println(toc(t)," seconds");t=tic();
             println(@sprintf("%.2f%% Completed & %.2f Accuracy|Loss",
                              100i/L,train ? cnt/total : 100cnt/total))
             flush(stdout)
@@ -575,12 +577,12 @@ function modelrun(w,r,opts,data,feats,o,wrun=nothing;train=false)
         if i % 2250 == 0 && train
             savemodel(o[:prefix]*".jld2",w,wrun,r,opts,o);
             println("model saved");flush(stdout);
-            gc(); Knet.gc(); gc();
+            Knet.gc(); #gc();
         end
     end
     savemodel(o[:prefix]*".jld2",w,wrun,r,opts,o);
     println("model saved");flush(stdout);
-    gc(); Knet.gc(); gc();
+    Knet.gc();
 end
 
 function train!(w,wrun,r,opts,sets,feats,o)
@@ -618,7 +620,7 @@ function train(dhome="data/",o=nothing)
      feats,qdata,dics = loadTrainingData(dhome;h5=o[:h5])
      sets = []
      for q in qdata; push!(sets,miniBatch(q;shfle=o[:shuffle],srtd=o[:sorted])); end
-     qdata = nothing; gc();
+     qdata = nothing; #gc();
      w,wrun,r,opts = train(sets,feats,o)
      return w,wrun,r,opts,sets,feats,dics;
 end

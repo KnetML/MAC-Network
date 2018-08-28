@@ -1,6 +1,6 @@
 using Knet, AutoGrad
 using Knet: cudnnSoftmaxForward, cudnnSoftmaxBackward
-using AutoGrad: Rec
+using AutoGrad: Value
 
 #=
 
@@ -19,7 +19,7 @@ equivalent to `exp.(logp(x,dims)`.
 """
 logp(x, dims=1) = _logp(x, dims) # generic fallback
 
-function logp(x::A, dims=1) where A <: Union{<:KnetArray, Rec{<:KnetArray}}
+function logp(x::A, dims=1) where A <: Union{<:KnetArray, Value{<:KnetArray}}
     d = sort(union(dims))
     if ndims(x) == length(d)
         n = length(x)
@@ -121,7 +121,7 @@ See also `logsoftmax`.
 """
 softmax(x, dims=1; algo=1) = _softmax(x, dims; algo=algo) # generic fallback
 
-function softmax(x::A, dims=1; algo=1) where A <: Union{<:KnetArray, Rec{<:KnetArray}}
+function softmax(x::A, dims=1; algo=1) where A <: Union{<:KnetArray, Value{<:KnetArray}}
     @assert algo ∈ [0, 1]
     d = sort(union(dims))
     if ndims(x) == length(d)
