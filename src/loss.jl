@@ -45,15 +45,15 @@ end
 # target probabilities, q is estimated probabilities. Read left column
 # down, right column (loss gradients) back up.
 
-# x			dx = -p + qz/z = -p + exp(logq)
-# xmax  = max(x,1)	-sum(db)=0
-# logqz = x .- xmax	-p + qz/z
-# qz    = exp(logqz)	rep(1/z)
-# z     = sum(qz,1)	1/z
-# logz  = log(z)	sum(p)=1
-# logq  = logqz.-logz	-p
-# plogq = p .* logq	-1
-# loss  = -sum(plogq)	1
+# xdx = -p + qz/z = -p + exp(logq)
+# xmax  = max(x,1)-sum(db)=0
+# logqz = x .- xmax-p + qz/z
+# qz    = exp(logqz)rep(1/z)
+# z     = sum(qz,1)1/z
+# logz  = log(z)sum(p)=1
+# logq  = logqz.-logz-p
+# plogq = p .* logq-1
+# loss  = -sum(plogq)1
 
 # We keep the old implementation _logp for CPU arrays, slow cases and
 # cases of d not handled by cudnn.

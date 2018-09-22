@@ -1,4 +1,4 @@
-using JSON,JLD
+using JSON
 dhome    = ARGS[1]
 trgthome = dhome * "demo/"
 valfile  = dhome * "val.json"
@@ -14,14 +14,14 @@ function loadFeatures(dhome,set)
 end
 
 function getdemo(file;part=100)
-    info("Validation feats are loading...")
+    println("Validation feats are loading...")
     valfeats  = loadFeatures(dhome,"val")
     demofeats = Any[];
-    info("Validation data are loading...")
+    println("Validation data are loading...")
     data      = JSON.parsefile(file)
     demo      = data[randperm(length(data))[1:part]]
 
-    info("Random selection are collecting...")
+    println("Random selection are collecting...")
     for d in demo
         imgname = d[1]
     	cp(oclvr*imgname ,valimgs*imgname;remove_destination=true)
@@ -30,17 +30,17 @@ function getdemo(file;part=100)
     end
     demofeats = cat(4,demofeats...)
 
-    info("Demo feats are writed...")
+    println("Demo feats are writed...")
     f = open(trgthome*"demo.bin","w")
     write(f,demofeats); close(f)
 
-    info("Demo data is writed...")
+    println("Demo data is writed...")
     open(trgthome * "demo.json","w") do f
         write(f,json(demo))
     end
 end
 
-info("Creating demo folders if necessary...")
+println("Creating demo folders if necessary...")
 !isdir(trgthome) && mkdir(trgthome)
 !isdir(clvrhome) && mkdir(clvrhome)
 !isdir(imgshome) && mkdir(imgshome)

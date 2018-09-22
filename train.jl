@@ -11,25 +11,17 @@ valqstns = getQdata(o[:dhome],"val")
 println("Loading dictionaries ... ")
 qvoc,avoc,i2w,i2a = getDicts(o[:dhome],"dic")
 sets = []
-push!(sets,miniBatch(trnqstns))
-push!(sets,miniBatch(valqstns))
+push!(sets,shuffle!(miniBatch(trnqstns;B=48,srtd=true)))
+push!(sets,shuffle!(miniBatch(valqstns;B=48,srtd=true)))
 trnqstns=nothing;
 valqstns=nothing;
 
 #MODEL
 gpu(0)
-w,r,_,_,_ = init_network(o);
-wrun=deepcopy(w)
-opts = optimizers(w,Adam;lr=o[:lr])
-
+M = MACNetwork(o);
+Mrun=deepcopy(M);
 #FEATS
 trnfeats = loadFeatures(o[:dhome],"train";h5=o[:h5])
 valfeats = loadFeatures(o[:dhome],"val";h5=o[:h5])
 Knet.gc()
-
-for i=1:o[:epochs]
-    modelrun(w,r,opts,sets[1],trnfeats,o,wrun;train=true)
-    if iseven(i)
-        modelrun(wrun,r,opts,sets[2],valfeats,o;train=false)
-    end
-end
+M,Mrun = train!(M,Mrun,sets,(trnfeats,valfeats),o) 
