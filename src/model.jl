@@ -2,7 +2,7 @@ using Knet, Random
 if !isdefined(Main,:atype)
     global atype = gpu() < 0 ? Array{Float32} : KnetArray{Float32}
 end
-include("loss2.jl")
+include("loss.jl")
 abstract type Model;end;
 struct ResNet <: Model; w; end
 function (M::ResNet)(m,imgurl::String,avgimg;stage=3)
@@ -272,7 +272,7 @@ function (M::MACNetwork)(qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
         if selfattn; push!(cj,ci); push!(mj,mi); end
         tap!=nothing && (tap["cnt"]+=1)
     end
-    
+
     y = M.output(q,mi;train=train)
 
     if answers==nothing

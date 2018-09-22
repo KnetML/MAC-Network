@@ -5,10 +5,12 @@ uuid = "621f4979-c628-5d54-868e-fcf4e3e8185c"
 version = "0.3.2"
 
 [[AutoGrad]]
-deps = ["LinearAlgebra", "Pkg", "Printf", "Random", "SpecialFunctions", "Statistics", "Test"]
-git-tree-sha1 = "bd5bab7aa42b9ce1d5a054495b58c8f928227b8e"
+deps = ["LinearAlgebra", "Printf", "Random", "SpecialFunctions", "Statistics", "Test", "TimerOutputs"]
+git-tree-sha1 = "24a4f2faa56dcf1ebf73194be086ebca5782ee6d"
+repo-rev = "dy/1.1"
+repo-url = "https://github.com/denizyuret/AutoGrad.jl.git"
 uuid = "6710c13c-97f1-543f-91c5-74e8f7d95b35"
-version = "1.1.0"
+version = "1.1.0+"
 
 [[AxisAlgorithms]]
 deps = ["Compat", "WoodburyMatrices"]
@@ -96,6 +98,12 @@ deps = ["Compat", "Rotations", "StaticArrays"]
 git-tree-sha1 = "47f05d0b7f4999609f92e657147df000818c1f24"
 uuid = "150eb455-5306-5404-9cee-2592286d6298"
 version = "0.5.0"
+
+[[Crayons]]
+deps = ["Pkg", "Test"]
+git-tree-sha1 = "3017c662a988bcb8a3f43306a793617c6524d476"
+uuid = "a8cc5b0e-0ffa-5ad4-8c14-923d3ee1735f"
+version = "1.0.0"
 
 [[CustomUnitRanges]]
 deps = ["Pkg", "Test"]
@@ -451,6 +459,12 @@ deps = ["OffsetArrays", "Pkg", "Test"]
 git-tree-sha1 = "58f6f07d3b54a363ec283a8f5fc9fb4ecebde656"
 uuid = "06e1c1a7-607b-532d-9fad-de7d9aa2abac"
 version = "0.2.3"
+
+[[TimerOutputs]]
+deps = ["Crayons", "Printf", "Test", "Unicode"]
+git-tree-sha1 = "89a9bd610d6bfd62a7c2b85112762b99b979fe5f"
+uuid = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
+version = "0.4.0"
 
 [[Tqdm]]
 deps = ["Printf"]

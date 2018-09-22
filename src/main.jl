@@ -1,5 +1,6 @@
+using Pkg; Pkg.activate("../")
 #This implementation is very similar to original implementation in https://github.com/stanfordnlp/mac-network
-using JSON,Knet,Images
+using JSON,Knet,Images,HDF5
 using Printf,Random,Tqdm
 include("model.jl")
 savemodel(filename,m,mrun,o) = Knet.save(filename,"m",m,"mrun",mrun,"o",o)
@@ -152,7 +153,7 @@ function modelrun(M,data,feats,o,Mrun=nothing;train=false)
         if train
                 J = @diff M(questions,batchSizes,xS,xB,xP;answers=answers,p=o[:p],selfattn=o[:selfattn],gating=o[:gating])
                 flush(Base.stdout)
-	        cnt   += value(J)*B; total += B;
+                    cnt   += value(J)*B; total += B;
             if acc===nothing
                 acc = atype[];
             end
