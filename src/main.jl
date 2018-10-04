@@ -132,8 +132,8 @@ end
 function modelrun(M,data,feats,o,Mrun=nothing;train=false)
     getter(id) = view(feats,:,:,:,id)
     cnt=total=0.0; L=length(data);
-    Mparams   = Knet.params(M)
-    Rparams   = Mrun !== nothing ? Knet.params(Mrun) : nothing
+    Mparams   = params(M)
+    Rparams   = Mrun !== nothing ? params(Mrun) : nothing
     # results   = similar(Array{Float32},200704*48) #uncomment for INPLACE
     println("Timer Starts");
     for i in tqdm(1:L)
@@ -161,16 +161,9 @@ function modelrun(M,data,feats,o,Mrun=nothing;train=false)
             cnt   += sum(preds.==answers)
             total += B
         end
-        
         i % 1000 == 0 && println(@sprintf("%.2f Accuracy|Loss", train ? cnt/total : 100cnt/total))
-
-        # if i % 2250 == 0 && train
-        #     savemodel(o[:prefix]*".jld2",M,Mrun,o);
-        #     println("model saved");flush(stdout);
-        #     Knet.gc(); #gc();
-        # end
     end    
-    savemodel(o[:prefix]*".jld2",M,Mrun,o);
+    train && savemodel(o[:prefix]*".jld2",M,Mrun,o);
 end
 
 function train!(M,Mrun,sets,feats,o)
