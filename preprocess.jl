@@ -1,9 +1,9 @@
 using JSON, WordTokenizers, ProgressMeter
 
 function processquestions(dhome, set; word_dic=Dict(), answer_dic=Dict())
-    info("original data is loading")
+    println("original data is loading")
     data = JSON.parsefile(joinpath(dhome,"questions","CLEVR_$(set)_questions.json"))
-    info("parsing starts...")
+    println("parsing starts...")
     result = []
     p = Progress(length(data["questions"]))
     for question in data["questions"]
@@ -29,9 +29,9 @@ function preprocess(args)
         wdic = dics["word_dic"]
         adic = dics["answer_dic"]
     end
-    info("Parsing training questions...")
+    println("Parsing training questions...")
     processquestions(root, "train";word_dic=wdic, answer_dic=adic)
-    info("Parsing validation questions...")
+    println("Parsing validation questions...")
     processquestions(root, "val"  ;word_dic=wdic, answer_dic=adic)
 
     open("data/dic.json", "w") do f

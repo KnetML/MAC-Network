@@ -1,5 +1,6 @@
 #!/bin/sh
 #SBATCH --partition=ai
+#SBATCH --account=ai
 #SBATCH --gres=gpu:1
 #SBATCH --time=56:00:00
 #SBATCH --nodes=1
@@ -8,5 +9,5 @@
 #SBATCH --job-name="clevr"
 #SBATCH --output=clevr.out
 #SBATCH --error=clevr.error
-
-julia train.jl src/macnet.jl configs/config2.jl
+#SBATCH --nodelist=dy02
+julia train.jl src/main.jl configs/config2.jl

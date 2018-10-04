@@ -28,10 +28,10 @@ julia trainsetup.jl
 
 Below configuration can achieve %98.65 accuracy on CLEVR dataset
 ```SHELL
-julia train.jl src/macnet.jl configs/config2.jl
+julia train.jl src/main.jl configs/config2.jl
 ```
 
 For quick training you can use below command:
 ```SHELL
-julia train.jl src/macnet-py.jl configs/config1.jl
+julia train.jl src/macnetwork-py.jl configs/config1.jl
 ```

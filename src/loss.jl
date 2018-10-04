@@ -1,5 +1,6 @@
 using Knet, AutoGrad
 using Knet: cudnnSoftmaxForward, cudnnSoftmaxBackward
+using AutoGrad: Value
 
 #=
 
@@ -12,29 +13,29 @@ normalized log probabilities.
 over the first dimension of `x`, otherwise the normalization is performed over the
 given dimensions.  In particular, if `x` is a matrix, `dims=1`
 normalizes columns of `x`, `dims=2` normalizes rows of `x` and
-`dims=(1,2)` normalizes the whole matrix.  
-Calls to `logsoftmax` are equivalent to `logp`, and `softmax(x,dims)` is 
-equivalent to `exp.(logp(x,dims)`. 
+`dims=(1,2)` normalizes the whole matrix.
+Calls to `logsoftmax` are equivalent to `logp`, and `softmax(x,dims)` is
+equivalent to `exp.(logp(x,dims)`.
 """
 logp(x, dims=1) = _logp(x, dims) # generic fallback
 
-function logp(x::A, dims=1) where A <: Union{<:KnetArray, Rec{<:KnetArray}}
+function logp(x::A, dims=1) where A <: Union{<:KnetArray, Value{<:KnetArray}}
     d = sort(union(dims))
     if ndims(x) == length(d)
-        n = length(x)		 
-        if n > 20000 
+        n = length(x)
+        if n > 20000
             _logp(x, dims)
         else
             sz = size(x)
             x = cudnnSoftmaxForward(reshape(x,(1,1,n,1)),algo=2)
             reshape(x, sz)
-        end 
+        end
     elseif d == [1]
         sz = size(x)
         x = cudnnSoftmaxForward(reshape(x, (1,1,sz[1],:)), algo=2)
         reshape(x, sz)
     elseif ndims(x) == 2 && d == [2]
-        logp(x.', 1).' 
+        logp(x.', 1).'
     else
         _logp(x, dims)
     end
@@ -44,15 +45,15 @@ end
 # target probabilities, q is estimated probabilities. Read left column
 # down, right column (loss gradients) back up.
 
-# x			dx = -p + qz/z = -p + exp(logq)
-# xmax  = max(x,1)	-sum(db)=0
-# logqz = x .- xmax	-p + qz/z
-# qz    = exp(logqz)	rep(1/z)
-# z     = sum(qz,1)	1/z
-# logz  = log(z)	sum(p)=1
-# logq  = logqz.-logz	-p
-# plogq = p .* logq	-1
-# loss  = -sum(plogq)	1
+# xdx = -p + qz/z = -p + exp(logq)
+# xmax  = max(x,1)-sum(db)=0
+# logqz = x .- xmax-p + qz/z
+# qz    = exp(logqz)rep(1/z)
+# z     = sum(qz,1)1/z
+# logz  = log(z)sum(p)=1
+# logq  = logqz.-logz-p
+# plogq = p .* logq-1
+# loss  = -sum(plogq)1
 
 # We keep the old implementation _logp for CPU arrays, slow cases and
 # cases of d not handled by cudnn.
@@ -100,7 +101,7 @@ end
 """
     logsoftmax(x, dims=1)
 
-Equivalent to `logp(x, dims)`. See also `sotfmax`. 
+Equivalent to `logp(x, dims)`. See also `sotfmax`.
 """
 const logsoftmax = logp
 
@@ -111,16 +112,16 @@ const logsoftmax = logp
     softmax(x, dims=1; algo=1)
 
 The softmax function typically used in classification.
-Gives the same results as to `exp.(logp(x, dims))`. 
+Gives the same results as to `exp.(logp(x, dims))`.
 
-If `algo=1` computation is more accurate, if `algo=0` it is 
-faster. 
+If `algo=1` computation is more accurate, if `algo=0` it is
+faster.
 
 See also `logsoftmax`.
 """
 softmax(x, dims=1; algo=1) = _softmax(x, dims; algo=algo) # generic fallback
 
-function softmax(x::A, dims=1; algo=1) where A <: Union{<:KnetArray, Rec{<:KnetArray}}
+function softmax(x::A, dims=1; algo=1) where A <: Union{<:KnetArray, Value{<:KnetArray}}
     @assert algo ∈ [0, 1]
     d = sort(union(dims))
     if ndims(x) == length(d)
@@ -132,23 +133,23 @@ function softmax(x::A, dims=1; algo=1) where A <: Union{<:KnetArray, Rec{<:KnetA
         x = cudnnSoftmaxForward(reshape(x, (1,1,sz[1],:)), algo=algo)
         reshape(x, sz)
     elseif ndims(x) == 2 && d == [2]
-        softmax(x.', 1, algo=algo).'
+        transpose(softmax(transpose(x), 1, algo=algo))
     else
         _softmax(x, dims)
     end
-end 
+end
 
 function _softmax(x, dims; algo=1)
     @assert algo ∈ [0, 1]
     if algo == 1
-        x = x .- maximum(x, dims)
-    end    
+        x = x .- maximum(x;dims=dims)
+    end
     x = exp.(x)
-    return x ./ sum(x, dims)
+    return x ./ sum(x;dims=dims)
 end
 
 function _softback(x,y,dy,dims)
-    return y .* dy .- y .* sum(y .* dy, dims)
+    return y .* dy .- y .* sum(y .* dy; dims=dims)
 end
 
 #=
@@ -163,7 +164,7 @@ typedef enum
     CUDNN_SOFTMAX_MODE_INSTANCE = 0,   /* compute the softmax over all C, H, W for each N */
     CUDNN_SOFTMAX_MODE_CHANNEL = 1     /* compute the softmax over all C for each H, W, N */
 } cudnnSoftmaxMode_t;
-=#          
+=#
 
 #=
 function cudnnSoftmaxForward{T}(x::KnetArray{T}; algo=0, mode=0, alpha=1, handle=cudnnhandle())
@@ -287,4 +288,3 @@ end
 # end
 
 # @primitive xentloss(x,p,d...),dy,y  (dy.*xentback(x,p,d...))
-

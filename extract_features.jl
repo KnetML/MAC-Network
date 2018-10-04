@@ -55,10 +55,10 @@ function extract(dhome,set,params;atype=Array{Float32})
 end
 
 function extract_features(dhome)
-    atype = gpu()<0 ? Array{Float32}:KnetArray{Float32}
+    atype = gpu()<0 ? Array{Float32} : KnetArray{Float32}
     params = loadparams(atype)
-    info("Extracting training features")
+    println("Extracting training features")
     extract(dhome,"train",params;atype=atype)
-    info("Extracting validation features")
+    println("Extracting validation features")
     extract(dhome,"val",params;atype=atype)
 end
