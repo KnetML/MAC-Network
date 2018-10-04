@@ -1,6 +1,7 @@
 include(ARGS[1])
 include(ARGS[2])
 println("Loading questions ...")
+Knet.seed!(11131994)
 trnqstns = getQdata(o[:dhome],"train")
 valqstns = getQdata(o[:dhome],"val")
 println("Loading dictionaries ... ")
@@ -13,12 +14,10 @@ valqstns=nothing;
 #MODEL
 #gpu(0)
 M    = MACNetwork(o);
-Mrun = MACNetwork(o)
-for (wr,wi) in zip(Knet.params(Mrun),Knet.params(M));
+Mrun = MACNetwork(o)'
+for (wr,wi) in zip(params(Mrun),params(M));
     wr.value[:] = wi.value[:]
-    println(sum(wr.value-wi.value))
 end
-savemodel(o[:prefix]*".jld2",M,Mrun,o);
 Knet.gc()
 #FEATS
 trnfeats = loadFeatures(o[:dhome],"train";h5=o[:h5])
