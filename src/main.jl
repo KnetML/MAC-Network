@@ -1,4 +1,4 @@
-using Pkg; Pkg.activate("../")
+#using Pkg; Pkg.activate("../")
 #This implementation is very similar to original implementation in https://github.com/stanfordnlp/mac-network
 using JSON,Knet,Images,HDF5
 #import AutoGrad: cat1d

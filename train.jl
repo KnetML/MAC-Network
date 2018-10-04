@@ -1,3 +1,4 @@
+import Pkg; Pkg.activate("."); Pkg.instantiate();
 include(ARGS[1])
 include(ARGS[2])
 println("Loading questions ...")
@@ -22,4 +23,4 @@ Knet.gc()
 #FEATS
 trnfeats = loadFeatures(o[:dhome],"train";h5=o[:h5])
 valfeats = loadFeatures(o[:dhome],"val";h5=o[:h5])
-M,Mrun = train!(M,Mrun,sets,(trnfeats,valfeats),o) 
+M,Mrun = train!(M,Mrun,sets,(trnfeats,valfeats),o)
