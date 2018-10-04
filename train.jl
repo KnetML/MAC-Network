@@ -14,7 +14,7 @@ valqstns=nothing;
 #MODEL
 #gpu(0)
 M    = MACNetwork(o);
-Mrun = MACNetwork(o)'
+Mrun = MACNetwork(o);
 for (wr,wi) in zip(params(Mrun),params(M));
     wr.value[:] = wi.value[:]
 end
