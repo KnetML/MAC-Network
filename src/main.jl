@@ -1,4 +1,4 @@
-#using Pkg; Pkg.activate("../")
+using Pkg; Pkg.activate("../")
 #This implementation is very similar to original implementation in https://github.com/stanfordnlp/mac-network
 using JSON,Knet,Images,HDF5
 #import AutoGrad: cat1d
@@ -162,7 +162,7 @@ function modelrun(M,data,feats,o,Mrun=nothing;train=false)
             total += B
         end
         i % 1000 == 0 && println(@sprintf("%.2f Accuracy|Loss", train ? cnt/total : 100cnt/total))
-    end    
+    end
     train && savemodel(o[:prefix]*".jld2",M,Mrun,o);
 end
 
