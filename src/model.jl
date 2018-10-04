@@ -2,7 +2,6 @@ using Knet, Random
 if !isdefined(Main,:atype)
     global atype = gpu() < 0 ? Array{Float32} : KnetArray{Float32}
 end
-include("loss.jl")
 abstract type Model;end;
 struct ResNet <: Model; w; end
 function (M::ResNet)(m,imgurl::String,avgimg;stage=3)
@@ -30,7 +29,7 @@ Linear() = Linear(nothing,nothing)
 
 struct Embed <: Model; w ; end
 (m::Embed)(x)  = m.w[:,x]
-Embed(input,embed;winit=init) = Embed(winit(embed,input))
+Embed(input,embed;winit=rand) = Embed(Par(winit(Float32,embed,input)))
 Embed() = Embed(nothing)
 
 struct Conv4D <: Model; w; b; end
@@ -43,13 +42,14 @@ struct CNN <: Model
 end
 
 function (m::CNN)(x;train=false)
-    train && (x  = dropout(x,0.18))
+    if train;x=dropout(x,0.18);end
     x1 = elu.(m.layer1(x))
-    train && (x1  = dropout(x1,0.18))
+    if train;x1=dropout(x1,0.18);end
     x2 = elu.(m.layer2(x1))
     h,w,c,b = size(x2)
     permutedims(reshape(x2,h*w,c,b),(2,3,1))
 end
+
 CNN(h,w,c,d;winit=init,binit=bias) = CNN(Conv4D(h,w,c,d),Conv4D(h,w,d,d))
 
 struct mRNN  <: Model
@@ -75,10 +75,10 @@ struct QUnit  <: Model
 end
 function (m::QUnit)(x;batchSizes=[1],train=false)
     xe = m.embed(x)
-    train && (xe=dropout(xe,0.15))
+    if train; xe=dropout(xe,0.15); end;
     y,hyout = m.rnn(xe;batchSizes=batchSizes)
     q            = vcat(hyout[:,:,1],hyout[:,:,2])
-    train && (q=dropout(q,0.08))
+    if train; q=dropout(q,0.08); end;
     B = batchSizes[1]
     if ndims(y) == 2
         indices      = bs2ind(batchSizes)
@@ -109,7 +109,7 @@ function (m::QUnit)(x;batchSizes=[1],train=false)
     return q,cws_3d;
 end
 QUnit(vocab::Int,embed::Int,hidden::Int;bidir=true) = QUnit(Embed(vocab,embed),
-                                                            mRNN(embed,hidden;bidirectional=bidir,binit=zeros),
+                                                            mRNN(embed,hidden;bidirectional=bidir),
                                                             Linear(2hidden,hidden))
 
 function bs2ind(batchSizes)
@@ -132,9 +132,9 @@ function (m::Control)(c,q,cws,pad;train=false,tap=nothing)
       cvis  = reshape(cqi .* cws,(d,B*T))
       cvis_2d = reshape(m.att(cvis),(B,T)) #eq c2.1.2
       if pad != nothing
-          cvi = reshape(softmax(cvis_2d .- pad,2),(1,B,T)) #eq c2.2
+          cvi = reshape(softmax(cvis_2d .- pad,dims=2),(1,B,T)) #eq c2.2
       else
-          cvi = reshape(softmax(cvis_2d,2),(1,B,T)) #eq c2.2
+          cvi = reshape(softmax(cvis_2d,dims=2),(1,B,T)) #eq c2.2
       end
       tap!=nothing && get!(tap,"w_attn_$(tap["cnt"])",Array(reshape(cvi,B,T)))
       cnew = reshape(sum(cvi.*cws;dims=3),(d,B))
@@ -156,9 +156,9 @@ function (m::Read)(mp,ci,cws,KBhw′,KBhw′′;train=false,tap=nothing)
     ImKB′ = reshape(elu.(m.Ime*ImKB .+ KBhw′′),(d,B,N)) #eq r2
     ci_3d = reshape(ci,(d,B,1))
     IcmKB_pre = elu.(reshape(ci_3d .* ImKB′,(d,BN))) #eq r3.1.1
-    train && (IcmKB_pre = dropout(IcmKB_pre,0.15))
+    if train; IcmKB_pre = dropout(IcmKB_pre,0.15); end;
     IcmKB = reshape(m.att(IcmKB_pre),(B,N)) #eq r3.1.2
-    mvi = reshape(softmax(IcmKB,2),(1,B,N)) #eq r3.2
+    mvi = reshape(softmax(IcmKB,dims=2),(1,B,N)) #eq r3.2
     tap!=nothing && get!(tap,"KB_attn_$(tap["cnt"])",Array(reshape(mvi,B,N)))
     mnew = reshape(sum(mvi.*KBhw′;dims=3),(d,B)) #eq r3.3
 end
@@ -182,7 +182,7 @@ function (m::Write)(m_new,mi₋1,mj,ci,cj;train=false,selfattn=true,gating=true,
     cj_3d      = reshape(cat1d(cj...),(d,B,T)) #reshape(hcat(cj...),(d,B,T)) #
     sap        = reshape(ci_3d.*cj_3d,(d,B*T)) #eq w2.1.1
     sa         = reshape(m.att(sap),(B,T)) #eq w2.1.2
-    sa′        = reshape(softmax(sa,2),(1,B,T)) #eq w2.1.3
+    sa′        = reshape(softmax(sa,dims=2),(1,B,T)) #eq w2.1.3
     mj_3d      = reshape(cat1d(mj...),(d,B,T)) #reshape(hcat(mj...),(d,B,T)) #
     mi_sa      = reshape(sum(sa′ .* mj_3d;dims=3),(d,B))
     mi′′       = m.mpp*mi_sa .+ mi #eq w2.3
@@ -225,7 +225,7 @@ end
 function (m::Output)(q,mp;train=false)
   qe = elu.(m.qe(q))
   x  = elu.(m.l1(cat(qe,mp;dims=1)))
-  y  = m.l2(x)
+  m.l2(x)
 end
 Output(d::Int) = Output(Linear(2d,d),Linear(2d,d),Linear(d,28))
 
@@ -247,7 +247,7 @@ function (M::MACNetwork)(qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
     #Read Unit Precalculations
     d,B,N         = size(KBhw)
     KBhw_2d       = reshape(KBhw,(d,B*N))
-    train && (KBhw_2d = dropout(KBhw_2d,0.15))
+    if train; KBhw_2d = dropout(KBhw_2d,0.15); end;
     KBhw′_pre     = M.mac.read.Kbe(KBhw_2d) # look if it is necessary
     KBhw′′        = M.mac.read.Kbe2(KBhw′_pre)
     KBhw′         = reshape(KBhw′_pre,(d,B,N))
@@ -267,7 +267,7 @@ function (M::MACNetwork)(qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
 
     for i=1:p
         qi        = qi_c[(i-1)*d+1:i*d,:]
-        if train; ci = dropout(ci,0.15); mi = dropout(mi,0.15);end
+        if train; ci = dropout(ci,0.15); mi = dropout(mi,0.15); end
         ci,mi = M.mac(qi,cws,mi,mj,ci,cj,KBhw′,KBhw′′,xP;train=train,selfattn=selfattn,gating=gating,tap=tap)
         if selfattn; push!(cj,ci); push!(mj,mi); end
         tap!=nothing && (tap["cnt"]+=1)
@@ -280,7 +280,7 @@ function (M::MACNetwork)(qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
         tap!=nothing && get!(tap,"y",predmat)
         return mapslices(argmax,predmat,dims=1)[1,:]
     else
-        return nll(y,answers;average=true)
+        return nll(y,answers)
     end
 end
 
@@ -291,13 +291,12 @@ function MACNetwork(o::Dict)
                       Linear(2*o[:d],o[:p]*o[:d]),
                       MAC(o[:d];selfattn=o[:selfattn],gating=o[:gating]),
                       Output(o[:d]),
-                      init(o[:d],1), Par(rand(Float32,o[:d],1)))
+                      init(o[:d],1), Par(randn(Float32,o[:d],1)))
 end
 
 function setoptim!(m::MACNetwork,o)
-    lr = o[:lr]/2 #batch multilication
-    for param in params(m)
-        param.opt = Adam(;lr=lr)
+    for param in Knet.params(m)
+        param.opt = Adam(;lr=o[:lr])
     end
 end
 

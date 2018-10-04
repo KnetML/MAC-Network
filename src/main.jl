@@ -1,6 +1,7 @@
-using Pkg; Pkg.activate("../")
+#using Pkg; Pkg.activate("../")
 #This implementation is very similar to original implementation in https://github.com/stanfordnlp/mac-network
 using JSON,Knet,Images,HDF5
+#import AutoGrad: cat1d
 using Printf,Random,Tqdm
 include("model.jl")
 savemodel(filename,m,mrun,o) = Knet.save(filename,"m",m,"mrun",mrun,"o",o)
@@ -128,18 +129,13 @@ function loadDemoData(dhome="data/demo/")
     return feats,qstns,dics
 end
 
-
-tic()  = time_ns();
-toc(t) = (time_ns()-t)*1e-9
-
 function modelrun(M,data,feats,o,Mrun=nothing;train=false)
     getter(id) = view(feats,:,:,:,id)
     cnt=total=0.0; L=length(data);
-    println("Timer Starts");flush(stdout);t=tic()
-    acc = nothing
-    Mparams   = params(M)
-    Rparams   = Mrun !== nothing ? params(Mrun) : nothing
+    Mparams   = Knet.params(M)
+    Rparams   = Mrun !== nothing ? Knet.params(Mrun) : nothing
     # results   = similar(Array{Float32},200704*48) #uncomment for INPLACE
+    println("Timer Starts");
     for i in tqdm(1:L)
         ids,questions,answers,batchSizes,pad,families = data[i]
         B    = batchSizes[1]
@@ -149,31 +145,15 @@ function modelrun(M,data,feats,o,Mrun=nothing;train=false)
         xS   = atype(x)
         #xS   = atype(reshape(cat1d(map(getter,ids)...),14,14,1024,B))
         xP   = pad==nothing ? nothing : atype(pad*Float32(1e22))
-
         if train
-                J = @diff M(questions,batchSizes,xS,xB,xP;answers=answers,p=o[:p],selfattn=o[:selfattn],gating=o[:gating])
-                flush(Base.stdout)
-                    cnt   += value(J)*B; total += B;
-            if acc===nothing
-                acc = atype[];
+            J = @diff M(questions,batchSizes,xS,xB,xP;answers=answers,p=o[:p],selfattn=o[:selfattn],gating=o[:gating])
+            cnt += value(J)*B; total += B;
+            for w in Mparams
+                update!(w.value,grad(J,w),w.opt)
             end
-            for (i,w) in enumerate(Mparams)
-                g = grad(J,w)
-                if isassigned(acc,i)
-                    acc[i] += g
-                else
-                    push!(acc,g)
-                end
-            end
-            if iseven(i)
-                for (w,g) in zip(Mparams,acc)
-                    update!(w.value,g,w.opt)
-                end
-                acc = nothing
-                if Mrun != nothing
-                    for (wr,wi) in zip(Rparams,Mparams);
-                        axpy!(1.0f0-o[:ema],wi.value-wr.value,wr.value);
-                    end
+            if Mrun != nothing
+                for (wr,wi) in zip(Rparams,Mparams);
+                    axpy!(1.0f0-o[:ema],wi.value-wr.value,wr.value);
                 end
             end
         else
@@ -181,19 +161,15 @@ function modelrun(M,data,feats,o,Mrun=nothing;train=false)
             cnt   += sum(preds.==answers)
             total += B
         end
+        
+        i % 1000 == 0 && println(@sprintf("%.2f Accuracy|Loss", train ? cnt/total : 100cnt/total))
 
-        if i % 100 == 0
-            println(toc(t)," seconds");t=tic();
-            println(@sprintf("%.2f%% Completed & %.2f Accuracy|Loss",
-                             100i/L,train ? cnt/total : 100cnt/total))
-            flush(stdout)
-        end
-        if i % 2250 == 0 && train
-            savemodel(o[:prefix]*".jld2",M,Mrun,o);
-            println("model saved");flush(stdout);
-            Knet.gc(); #gc();
-        end
-    end
+        # if i % 2250 == 0 && train
+        #     savemodel(o[:prefix]*".jld2",M,Mrun,o);
+        #     println("model saved");flush(stdout);
+        #     Knet.gc(); #gc();
+        # end
+    end    
     savemodel(o[:prefix]*".jld2",M,Mrun,o);
 end
 
@@ -201,10 +177,9 @@ function train!(M,Mrun,sets,feats,o)
     @info "Training Starts...."
     setoptim!(M,o)
     for i=1:o[:epochs]
+        println("Epoch $(i) starts...")
         modelrun(M,sets[1],feats[1],o,Mrun;train=true)
-        if iseven(i)
-            modelrun(Mrun,sets[2],feats[2],o;train=false)
-        end
+        modelrun(Mrun,sets[2],feats[2],o;train=false)
     end
     return M,Mrun;
 end
