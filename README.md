@@ -26,7 +26,7 @@ julia trainsetup.jl
 
 ## Training
 
-Below configurations can achieve %98.65 accuracy on CLEVR dataset
+Below configuration can achieve %98.65 accuracy on CLEVR dataset
 ```SHELL
 julia train.jl src/main.jl configs/config2.jl
 ```

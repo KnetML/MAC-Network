@@ -5,6 +5,7 @@ if !isdir("data/demo")
     run(`tar -xzf demo.tar.gz`)
     rm("demo.tar.gz")
 end
+
 if !isfile("models/macnet.jld2")
     println("Downloading pre-trained model from our servers...")
     download(server*"models/mac-network/macnet.jld2","models/macnet.jld2")
