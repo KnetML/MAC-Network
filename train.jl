@@ -14,8 +14,13 @@ trnqstns=nothing;
 valqstns=nothing;
 #MODEL
 #gpu(0)
-M    = MACNetwork(o);
-Mrun = MACNetwork(o);
+if o[:mfile] !=nothing && isfile(o[:mfile])
+    M,Mrun,o = loadmodel(o[:mfile])
+else
+    M    = MACNetwork(o);
+    Mrun = MACNetwork(o);
+end
+
 for (wr,wi) in zip(params(Mrun),params(M));
     wr.value[:] = wi.value[:]
 end

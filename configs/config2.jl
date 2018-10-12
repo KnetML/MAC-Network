@@ -1,5 +1,5 @@
 o=Dict(:h5=>false,
-       :mfile=>nothing,
+       :mfile=>"train4_p2.jld2",
        :epochs=>30,
        :lr=>0.0001,
        :p=>12,
