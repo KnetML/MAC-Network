@@ -257,5 +257,5 @@ function visualize(img,results;p=12)
 end
 
 function scalepixel(pixel,scaler)
-     return HSV(pixel.h,pixel.s,pixel.v+2*scaler)
+     return HSV(pixel.h,pixel.s,min(1.0,pixel.v+5*scaler))
 end
