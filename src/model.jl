@@ -240,7 +240,7 @@ struct MACNetwork <: Model
     m0
 end
 
-function (M::MACNetwork)(qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=false,gating=false,tap=nothing)
+function (M::MACNetwork)(qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=false,gating=false,tap=nothing,allsteps=false)
     train         = answers!=nothing
     #STEM Processing
     KBhw          = M.cnn(xS;train=train)
@@ -273,12 +273,23 @@ function (M::MACNetwork)(qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
         tap!=nothing && (tap["cnt"]+=1)
     end
 
-    y = M.output(q,mi;train=train)
+    y = M.output(q,mi;train=train)    
 
     if answers==nothing
-        predmat = Array{Float32}(y)
+        predmat = convert(Array{Float32},y)
         tap!=nothing && get!(tap,"y",predmat)
-        return mapslices(argmax,predmat,dims=1)[1,:]
+        predictions = mapslices(argmax,predmat,dims=1)[1,:]
+        if allsteps
+            outputs = []
+            for i=1:p-1
+                yi = M.output(q,mj[i];train=train)
+                yi = convert(Array{Float32},yi)
+                push!(outputs,mapslices(argmax,yi,dims=1)[1,:])
+            end
+            push!(outputs,predictions)
+            return outputs
+        end
+        return predictions
     else
         return nll(y,answers)
     end

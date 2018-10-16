@@ -228,24 +228,21 @@ function singlerun(Mrun,feat,question;p=12,selfattn=false,gating=false)
     results        = Dict{String,Any}("cnt"=>1)
     batchSizes     = ones(Int,length(question))
     xB             = atype(ones(Float32,1,1))
-    Mrun(question,batchSizes,feat,xB,nothing;tap=results,p=p,selfattn=selfattn,gating=gating)
+    outputs = Mrun(question,batchSizes,feat,xB,nothing;tap=results,p=p,selfattn=selfattn,gating=gating,allsteps=true)
     prediction = argmax(results["y"])
-    return results,prediction
+    return results,prediction,outputs
 end
 
 function visualize(img,results;p=12)
     s_y,s_x = size(img)./14
     for k=1:p
         α = results["w_attn_$(k)"][:]
-        top3    = sortperm(α;rev=true)[1:3]
-        wattns  = map(x->@sprintf("%.2f%%",x),α[top3]*100)
-        wrds    = i2w[question[top3]]
-        #printstyled("Top-3 Attended Words:\n";bold = true,color = :yellow)
-        print("Top-3 Attended Words:\n")
-        println(join(zip(wrds,wattns),"\n"))
-        flush(stdout)
-        # display([RGB{N0f8}(α[i],α[i],α[i]) for i=1:length(α)]);
-        #printsyled("Image Attention Map: ";bold = true, color = :blue)
+        wrds    = i2w[question]
+        p = bar(α;xticks=(collect(1:length(wrds)),wrds),xrotation=90,bar_width = 1,
+            xtickfont = font(8, "Courier"),yticks=0:.1:(maximum(α)+.1),
+            legend=false,size=(600,100+400*(maximum(α))),aspect_ratio=10)      
+        savefig(p,"plots/$(k).png")
+        display(RGB.(load("plots/$(k).png")))
         println("Image Attention Map: ")
         flush(stdout)
         hsvimg = HSV.(img);
