@@ -1,6 +1,7 @@
 #using Pkg; Pkg.activate("../")
 #This implementation is very similar to original implementation in https://github.com/stanfordnlp/mac-network
-using JSON,Knet,Images,HDF5
+using ImageMagick  # this needs to be loaded first
+using JSON,Knet,Images,HDF5,Plots
 #import AutoGrad: cat1d
 using Printf,Random,Tqdm
 include("model.jl")
@@ -242,8 +243,7 @@ function visualize(img,results;p=12)
             xtickfont = font(8, "Courier"),yticks=0:.1:(maximum(α)+.1),
             legend=false,size=(600,100+400*(maximum(α))),aspect_ratio=10)      
         savefig(p,"plots/$(k).png")
-        display(RGB.(load("plots/$(k).png")))
-        println("Image Attention Map: ")
+        println("Image Attention Map $k: ")
         flush(stdout)
         hsvimg = HSV.(img);
         attn = results["KB_attn_$(k)"]
@@ -253,6 +253,7 @@ function visualize(img,results;p=12)
             hsvimg[rngy,rngx]  = scalepixel.(hsvimg[rngy,rngx],attn[LinearIndices((1:14,1:14))[i,j]])
         end
         display(hsvimg)
+        display(RGB.(load("plots/$(k).png")))
     end
 end
 
