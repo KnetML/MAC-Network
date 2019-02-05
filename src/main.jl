@@ -1,9 +1,7 @@
-#using Pkg; Pkg.activate("../")
-#This implementation is very similar to original implementation in https://github.com/stanfordnlp/mac-network
-using ImageMagick  # this needs to be loaded first
-using JSON,Knet,Images,HDF5,Plots
-#import AutoGrad: cat1d
-using Printf,Random,Tqdm
+using ImageMagick 
+using AutoGrad, Knet, KnetLayers, JSON, HDF5,Plots
+using Printf,Random
+
 include("model.jl")
 savemodel(filename,m,mrun,o) = Knet.save(filename,"m",m,"mrun",mrun,"o",o)
 
@@ -37,12 +35,12 @@ function getDicts(dhome,dicfile)
     return qvoc,avoc,i2w,i2a
 end
 
-function loadFeatures(dhome,set;h5=false)
+function loadFeatures(dhome,set;h5=false, featsize=(14,14,1024))
     if h5
         return h5open(dhome*set*".hdf5","r")["data"]
     else
         feats = reinterpret(Float32,read(open(dhome*set*".bin")))
-        return reshape(feats,(14,14,1024,div(length(feats),200704)))
+        return reshape(feats,(featsize...,div(length(feats),prod(featsize))))
     end
 end
 
@@ -137,15 +135,15 @@ function modelrun(M,data,feats,o,Mrun=nothing;train=false)
     Rparams   = Mrun !== nothing ? params(Mrun) : nothing
     # results   = similar(Array{Float32},200704*48) #uncomment for INPLACE
     println("Timer Starts");
-    for i in tqdm(1:L)
+    for i in progress(1:L)
         ids,questions,answers,batchSizes,pad,families = data[i]
         B    = batchSizes[1]
-        xB   = atype(ones(Float32,1,B))
+        xB   = arrtype(ones(Float32,1,B))
         #x    = inplace_batcher(results,feats,ids) #uncomment for INPLACE
         x    = batcher1(feats,ids) #comment for INPLACE
-        xS   = atype(x)
-        #xS   = atype(reshape(cat1d(map(getter,ids)...),14,14,1024,B))
-        xP   = pad==nothing ? nothing : atype(pad*Float32(1e22))
+        xS   = arrtype(x)
+        #xS   = arrtype(reshape(cat1d(map(getter,ids)...),14,14,1024,B))
+        xP   = pad==nothing ? nothing : arrtype(pad*Float32(1e22))
         if train
             J = @diff M(questions,batchSizes,xS,xB,xP;answers=answers,p=o[:p],selfattn=o[:selfattn],gating=o[:gating])
             cnt += value(J)*B; total += B;
@@ -154,7 +152,7 @@ function modelrun(M,data,feats,o,Mrun=nothing;train=false)
             end
             if Mrun != nothing
                 for (wr,wi) in zip(Rparams,Mparams);
-                    axpy!(1.0f0-o[:ema],wi.value-wr.value,wr.value);
+                    Knet.axpy!(1.0f0-o[:ema],wi.value-wr.value,wr.value);
                 end
             end
         else
@@ -228,7 +226,7 @@ end
 function singlerun(Mrun,feat,question;p=12,selfattn=false,gating=false)
     results        = Dict{String,Any}("cnt"=>1)
     batchSizes     = ones(Int,length(question))
-    xB             = atype(ones(Float32,1,1))
+    xB             = arrtype(ones(Float32,1,1))
     outputs = Mrun(question,batchSizes,feat,xB,nothing;tap=results,p=p,selfattn=selfattn,gating=gating,allsteps=true)
     prediction = argmax(results["y"])
     return results,prediction,outputs
