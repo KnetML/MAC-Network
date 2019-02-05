@@ -1,8 +1,8 @@
 import Pkg; Pkg.activate("."); Pkg.instantiate();
+using Knet; gpu(0);
 include("configs/config2.jl")
 include("src/main.jl")
 #MODEL
-gpu(0)
 M    = MACNetwork(o);
 Knet.gc()
 #FEATS
