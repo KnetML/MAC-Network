@@ -27,8 +27,8 @@ function (m::CNN)(x)
     h,w,c,b = size(x2)
     permutedims(reshape(x2,h*w,c,b),(2,3,1))
 end
-CNN(h::Int,w::Int,c::Int,d::Int) = CNN(Conv(height=h,width=w,inout=c=>d),
-                                       Conv(height=h,width=w,inout=d=>d),
+CNN(h::Int,w::Int,c::Int,d::Int) = CNN(Conv(height=h,width=w,inout=c=>d,padding=1,stride=1),
+                                       Conv(height=h,width=w,inout=d=>d,padding=1,stride=1),
                                        ELU(), Dropout(0.18))
 
 struct mRNN  <: Model
