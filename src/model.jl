@@ -91,7 +91,7 @@ end
 QUnit(vocab::Int,embed::Int,hidden::Int;bidir=true) = QUnit(Embed(input=vocab, output=embed; winit=rand),
                                                             mRNN(embed,hidden;bidirectional=bidir),
                                                             Linear(input=2hidden,output=hidden),
-                                                            Dropout(0.18), Dropout(0.15))
+                                                            Dropout(0.15), Dropout(0.08))
 
 function bs2ind(batchSizes)
     B = batchSizes[1]
@@ -182,14 +182,14 @@ function Write(d::Int;selfattn=true,gating=true)
         if gating
             Write(Linear(input=2d,output=d),Linear(input=d,output=d),
                   Linear(input=d,output=1),param(d,d;atype=arrtype, init=xavier),
-                  Linear(input=d,output=1),ELU())
+                  Linear(input=d,output=1),Sigm())
         else
             Write(Linear(input=2d,output=d),Linear(input=d,output=d),
                   Linear(input=d,output=1),param(d,d;atype=arrtype, init=xavier),
-                  nothing,ELU())
+                  nothing,Sigm())
         end
     else
-        Write(Linear(input=2d,output=d),nothing,nothing,nothing,nothing,ELU())
+        Write(Linear(input=2d,output=d),nothing,nothing,nothing,nothing,Sigm())
     end
 end
 
