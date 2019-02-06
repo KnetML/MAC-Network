@@ -1,5 +1,5 @@
-using ImageMagick 
-using AutoGrad, Knet, KnetLayers, JSON, HDF5,Plots
+using ImageMagick, Images
+using AutoGrad, Knet, KnetLayers, JSON, HDF5, Plots
 using Printf,Random
 
 include("model.jl")

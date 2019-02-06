@@ -6,8 +6,8 @@ if !isdir("data/demo")
     rm("demo.tar.gz")
 end
 
-if !isfile("models/macnet.jld2")
+if !isfile("models/macnet2.jld2")
     println("Downloading pre-trained model from our servers...")
-    download(server*"models/mac-network/macnet2.jld2","models/macnet.jld2")
+    download(server*"models/mac-network/macnet2.jld2","models/macnet2.jld2")
 end
 println("Demo setup is completed")
