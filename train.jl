@@ -14,6 +14,7 @@ trnqstns=nothing;
 valqstns=nothing;
 #MODEL
 #gpu(0)
+@show arrtype
 if o[:mfile] !=nothing && isfile(o[:mfile])
     M,Mrun,o = loadmodel(o[:mfile])
 else
