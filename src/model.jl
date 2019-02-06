@@ -1,12 +1,10 @@
-using Knet, Random
-if !isdefined(Main,:atype)
-    global atype = gpu() < 0 ? Array{Float32} : KnetArray{Float32}
-end
-abstract type Model;end;
+import KnetLayers: arrtype, Activation, Filtering
+
+abstract type Model end
 struct ResNet <: Model; w; end
 function (M::ResNet)(m,imgurl::String,avgimg;stage=3)
     img = imgdata(imgurl, avgimg)
-    return M(w,m,atype(img);stage=stage);
+    return M(w,m,arrtype(img);stage=stage);
 end
 function ResNet(atype::Type;stage=3)
     w,m,meta = ResNetLib.resnet101init(;trained=true,stage=stage)
@@ -14,72 +12,53 @@ function ResNet(atype::Type;stage=3)
     global descriptions = meta["classes"]["description"]
     return w,m,meta,avgimg
 end
+
 ResNet() = ResNet(nothing);
 
-Par(x)     = Param(atype(x))
-init(o...) = Par(xavier(Float32,o...))
-bias(o...) = Par(zeros(Float32,o...))
-#elu(x)     = relu.(x) + (exp.(min.(0,x)) .- 1.0f0)
-#softmax(x,dims) = exp.(logp(x;dims=dims))
-
-struct Linear <: Model; w; b; end
-(m::Linear)(x) = m.w * x .+ m.b
-Linear(input::Int,output::Int;winit=init,binit=bias) = Linear(winit(output,input),binit(output,1))
-Linear() = Linear(nothing,nothing)
-
-struct Embed <: Model; w ; end
-(m::Embed)(x)  = m.w[:,x]
-Embed(input,embed;winit=rand) = Embed(Par(winit(Float32,embed,input)))
-Embed() = Embed(nothing)
-
-struct Conv4D <: Model; w; b; end
-(m::Conv4D)(x) = conv4(m.w,x;padding=1,stride=1) .+ m.b
-Conv4D(h,w,c,o;winit=init,binit=bias) = Conv4D(winit(h,w,c,o),binit(1,1,o,1))
-
 struct CNN <: Model
-    layer1::Conv4D
-    layer2::Conv4D
+    layer1::Filtering{typeof(conv4)}
+    layer2::Filtering{typeof(conv4)}
+    drop::Dropout
 end
-
-function (m::CNN)(x;train=false)
-    if train;x=dropout(x,0.18);end
-    x1 = elu.(m.layer1(x))
-    if train;x1=dropout(x1,0.18);end
-    x2 = elu.(m.layer2(x1))
+function (m::CNN)(x)
+    x1 = m.layer1(m.drop(x))
+    x2 = m.layer2(m.drop(x1))
     h,w,c,b = size(x2)
     permutedims(reshape(x2,h*w,c,b),(2,3,1))
 end
-
-CNN(h,w,c,d;winit=init,binit=bias) = CNN(Conv4D(h,w,c,d),Conv4D(h,w,d,d))
+CNN(h::Int,w::Int,c::Int,d::Int) = CNN(Conv(height=h,width=w,inout=c=>d,padding=1,activation=ELU()),
+                                       Conv(height=h,width=w,inout=d=>d,padding=1,activation=ELU()),
+                                       Dropout(0.18))
 
 struct mRNN  <: Model
-    rnn
+    rnn::LSTM
 end
 
-function (m::mRNN)(x;batchSizes=[1],train=false)
+function (m::mRNN)(x;batchSizes=[1])
     B = first(batchSizes)
     if last(batchSizes)!=B
-        y,hyout,_,_ = rnnforw(m.rnn,m.rnn.w,x;batchSizes=batchSizes,hy=true,cy=false)
+        out = m.rnn(x;batchSizes=batchSizes,hy=true,cy=false)
     else
-        x           = reshape(x,size(x,1),B,div(size(x,2),B))
-        y,hyout,_,_ = rnnforw(m.rnn,m.rnn.w,x;hy=true,cy=false)
+        x   = reshape(x,size(x,1),B,div(size(x,2),B))
+        out = m.rnn(x;hy=true,cy=false)
     end
-    return y,hyout
+    return out.y, out.hidden
 end
-mRNN(input::Int,hidden::Int;o...) = mRNN(RNN(input, hidden;o...))
+mRNN(input::Int,hidden::Int;o...) = mRNN(LSTM(input=input, hidden=hidden;o...))
 
 struct QUnit  <: Model
     embed::Embed
     rnn::mRNN
     linear::Linear
+    drop1::Dropout
+    drop2::Dropout
 end
 function (m::QUnit)(x;batchSizes=[1],train=false)
-    xe = m.embed(x)
-    if train; xe=dropout(xe,0.15); end;
+    xe = m.drop1(m.embed(x))
     y,hyout = m.rnn(xe;batchSizes=batchSizes)
-    q            = vcat(hyout[:,:,1],hyout[:,:,2])
-    if train; q=dropout(q,0.08); end;
+    q  = m.drop2(vcat(hyout[:,:,1],hyout[:,:,2]))
     B = batchSizes[1]
+    
     if ndims(y) == 2
         indices      = bs2ind(batchSizes)
         lngths       = length.(indices)
@@ -92,7 +71,7 @@ function (m::QUnit)(x;batchSizes=[1],train=false)
             df = Tmax-lngths[i]
             if df > 0
                 cpad = zeros(Float32,2d*df) # zeros(Float32,2d,df)
-                kpad = atype(cpad)
+                kpad = arrtype(cpad)
                 ypad = reshape(cat1d(y1,kpad),2d,Tmax) # hcat(y1,kpad)
                 push!(cw,ypad)
             else
@@ -108,9 +87,10 @@ function (m::QUnit)(x;batchSizes=[1],train=false)
     cws_3d =  reshape(m.linear(cws_2d),(d,B,Tmax))
     return q,cws_3d;
 end
-QUnit(vocab::Int,embed::Int,hidden::Int;bidir=true) = QUnit(Embed(vocab,embed),
+QUnit(vocab::Int,embed::Int,hidden::Int;bidir=true) = QUnit(Embed(input=vocab, output=embed; winit=rand),
                                                             mRNN(embed,hidden;bidirectional=bidir),
-                                                            Linear(2hidden,hidden))
+                                                            Linear(input=2hidden,output=hidden),
+                                                            Dropout(0.15), Dropout(0.08))
 
 function bs2ind(batchSizes)
     B = batchSizes[1]
@@ -139,7 +119,7 @@ function (m::Control)(c,q,cws,pad;train=false,tap=nothing)
       tap!=nothing && get!(tap,"w_attn_$(tap["cnt"])",Array(reshape(cvi,B,T)))
       cnew = reshape(sum(cvi.*cws;dims=3),(d,B))
 end
-Control(d::Int) = Control(Linear(2d,d),Linear(d,1))
+Control(d::Int) = Control(Linear(input=2d,output=d),Linear(input=d,output=1))
 
 struct Read  <: Model
     me::Linear
@@ -147,6 +127,7 @@ struct Read  <: Model
     Kbe2::Linear
     Ime
     att::Linear
+    drop::Dropout
 end
 
 function (m::Read)(mp,ci,cws,KBhw′,KBhw′′;train=false,tap=nothing)
@@ -156,20 +137,22 @@ function (m::Read)(mp,ci,cws,KBhw′,KBhw′′;train=false,tap=nothing)
     ImKB′ = reshape(elu.(m.Ime*ImKB .+ KBhw′′),(d,B,N)) #eq r2
     ci_3d = reshape(ci,(d,B,1))
     IcmKB_pre = elu.(reshape(ci_3d .* ImKB′,(d,BN))) #eq r3.1.1
-    if train; IcmKB_pre = dropout(IcmKB_pre,0.15); end;
+    IcmKB_pre = m.drop(IcmKB_pre)
     IcmKB = reshape(m.att(IcmKB_pre),(B,N)) #eq r3.1.2
     mvi = reshape(softmax(IcmKB,dims=2),(1,B,N)) #eq r3.2
     tap!=nothing && get!(tap,"KB_attn_$(tap["cnt"])",Array(reshape(mvi,B,N)))
     mnew = reshape(sum(mvi.*KBhw′;dims=3),(d,B)) #eq r3.3
 end
-Read(d::Int) = Read(Linear(d,d),Linear(d,d),Linear(d,d),init(d,d),Linear(d,1))
+Read(d::Int) = Read(Linear(input=d,output=d),Linear(input=d,output=d),
+                    Linear(input=d,output=d),param(d,d; atype=arrtype, init=xavier),
+                    Linear(input=d,output=1), Dropout(0.15))
 
 struct Write  <: Model
     me::Linear
-    cproj::Linear
-    att::Linear
+    cproj::Union{Linear,Nothing}
+    att::Union{Linear,Nothing}
     mpp
-    gating::Linear
+    gating::Union{Linear,Nothing}
 end
 
 function (m::Write)(m_new,mi₋1,mj,ci,cj;train=false,selfattn=true,gating=true,tap=nothing)
@@ -194,12 +177,16 @@ end
 function Write(d::Int;selfattn=true,gating=true)
     if selfattn
         if gating
-            Write(Linear(2d,d),Linear(d,d),Linear(d,1),init(d,d),Linear(d,1))
+            Write(Linear(input=2d,output=d),Linear(input=d,output=d),
+                  Linear(input=d,output=1),param(d,d;atype=arrtype, init=xavier),
+                  Linear(input=d,output=1))
         else
-            Write(Linear(2d,d),Linear(d,d),Linear(d,1),init(d,d),Linear())
+            Write(Linear(input=2d,output=d),Linear(input=d,output=d),
+                  Linear(input=d,output=1),param(d,d;atype=arrtype, init=xavier),
+                  nothing)
         end
     else
-        Write(Linear(2d,d),Linear(),Linear(),nothing,Linear())
+        Write(Linear(input=2d,output=d),nothing,nothing,nothing,nothing)
     end
 end
 
@@ -217,17 +204,16 @@ end
 MAC(d::Int;selfattn=false,gating=false) = MAC(Control(d),Read(d),Write(d))
 
 struct Output <: Model
-    qe::Linear
-    l1::Linear
+    qe::Dense
+    l1::Dense
     l2::Linear
 end
 
-function (m::Output)(q,mp;train=false)
-  qe = elu.(m.qe(q))
-  x  = elu.(m.l1(cat(qe,mp;dims=1)))
-  m.l2(x)
-end
-Output(d::Int) = Output(Linear(2d,d),Linear(2d,d),Linear(d,28))
+(m::Output)(q,mp) = m.l2(m.l1(cat(m.qe(q),mp;dims=1)))
+
+Output(d::Int) = Output(Dense(input=2d,output=d,activation=ELU()),
+                        Dense(input=2d,output=d,activation=ELU()),
+                        Linear(input=d,output=28))
 
 struct MACNetwork <: Model
     resnet::ResNet
@@ -238,16 +224,16 @@ struct MACNetwork <: Model
     output::Output
     c0
     m0
+    drop::Dropout
 end
 
 function (M::MACNetwork)(qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=false,gating=false,tap=nothing,allsteps=false)
     train         = answers!=nothing
     #STEM Processing
-    KBhw          = M.cnn(xS;train=train)
+    KBhw          = M.cnn(xS)
     #Read Unit Precalculations
     d,B,N         = size(KBhw)
-    KBhw_2d       = reshape(KBhw,(d,B*N))
-    if train; KBhw_2d = dropout(KBhw_2d,0.15); end;
+    KBhw_2d       = M.drop(reshape(KBhw,(d,B*N)))
     KBhw′_pre     = M.mac.read.Kbe(KBhw_2d) # look if it is necessary
     KBhw′′        = M.mac.read.Kbe2(KBhw′_pre)
     KBhw′         = reshape(KBhw′_pre,(d,B,N))
@@ -267,13 +253,14 @@ function (M::MACNetwork)(qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
 
     for i=1:p
         qi        = qi_c[(i-1)*d+1:i*d,:]
-        if train; ci = dropout(ci,0.15); mi = dropout(mi,0.15); end
+        ci = M.drop(ci);
+        mi = M.drop(mi);
         ci,mi = M.mac(qi,cws,mi,mj,ci,cj,KBhw′,KBhw′′,xP;train=train,selfattn=selfattn,gating=gating,tap=tap)
         if selfattn; push!(cj,ci); push!(mj,mi); end
         tap!=nothing && (tap["cnt"]+=1)
     end
 
-    y = M.output(q,mi;train=train)    
+    y = M.output(q,mi)    
 
     if answers==nothing
         predmat = convert(Array{Float32},y)
@@ -282,7 +269,7 @@ function (M::MACNetwork)(qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
         if allsteps
             outputs = []
             for i=1:p-1
-                yi = M.output(q,mj[i];train=train)
+                yi = M.output(q,mj[i])
                 yi = convert(Array{Float32},yi)
                 push!(outputs,mapslices(argmax,yi,dims=1)[1,:])
             end
@@ -299,25 +286,24 @@ function MACNetwork(o::Dict)
            MACNetwork(ResNet(),
                       CNN(3,3,1024,o[:d]),
                       QUnit(o[:vocab_size],o[:embed_size],o[:d]),
-                      Linear(2*o[:d],o[:p]*o[:d]),
+                      Linear(input=2*o[:d],output=o[:p]*o[:d]),
                       MAC(o[:d];selfattn=o[:selfattn],gating=o[:gating]),
                       Output(o[:d]),
-                      init(o[:d],1), Par(randn(Float32,o[:d],1)))
+                      param(o[:d],1;atype=arrtype, init=xavier),
+                      param(o[:d],1;atype=arrtype, init=randn),
+                      Dropout(0.15))
 end
 
-function setoptim!(m::MACNetwork,o)
-    for param in Knet.params(m)
-        param.opt = Adam(;lr=o[:lr])
-    end
-end
+setoptim!(m::MACNetwork,o) = 
+    for param in params(m); param.opt = Adam(;lr=o[:lr]); end
 
 function benchmark(M::MACNetwork,feats,o;N=10)
     getter(id) = view(feats,:,:,:,id)
     B=32;L=25
     @time for i=1:N
         ids  = randperm(128)[1:B]
-        xB   = atype(ones(Float32,1,B))
-        xS   = atype(batcher(map(getter,ids)))
+        xB   = arrtype(ones(Float32,1,B))
+        xS   = arrtype(batcher(map(getter,ids)))
         xQ   = [rand(1:84) for i=1:B*L]
         answers = [rand(1:28) for i=1:B]
         batchSizes = [B for i=1:L]
