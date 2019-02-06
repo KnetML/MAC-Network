@@ -18,18 +18,17 @@ ResNet() = ResNet(nothing);
 struct CNN <: Model
     layer1::Filtering{typeof(conv4)}
     layer2::Filtering{typeof(conv4)}
-    activation::Activation
     drop::Dropout
 end
 function (m::CNN)(x)
-    x1 = m.activation(m.layer1(m.drop(x)))
-    x2 = m.activation(m.layer2(m.drop(x1)))
+    x1 = m.layer1(m.drop(x))
+    x2 = m.layer2(m.drop(x1))
     h,w,c,b = size(x2)
     permutedims(reshape(x2,h*w,c,b),(2,3,1))
 end
-CNN(h::Int,w::Int,c::Int,d::Int) = CNN(Conv(height=h,width=w,inout=c=>d,padding=1,stride=1),
-                                       Conv(height=h,width=w,inout=d=>d,padding=1,stride=1),
-                                       ELU(), Dropout(0.18))
+CNN(h::Int,w::Int,c::Int,d::Int) = CNN(Conv(height=h,width=w,inout=c=>d,padding=1,activation=ELU()),
+                                       Conv(height=h,width=w,inout=d=>d,padding=1,activation=ELU()),
+                                       Dropout(0.18))
 
 struct mRNN  <: Model
     rnn::LSTM
@@ -40,7 +39,7 @@ function (m::mRNN)(x;batchSizes=[1])
     if last(batchSizes)!=B
         out = m.rnn(x;batchSizes=batchSizes,hy=true,cy=false)
     else
-        x           = reshape(x,size(x,1),B,div(size(x,2),B))
+        x   = reshape(x,size(x,1),B,div(size(x,2),B))
         out = m.rnn(x;hy=true,cy=false)
     end
     return out.y, out.hidden
@@ -129,16 +128,15 @@ struct Read  <: Model
     Ime
     att::Linear
     drop::Dropout
-    activation::Activation
 end
 
 function (m::Read)(mp,ci,cws,KBhw′,KBhw′′;train=false,tap=nothing)
     d,B,N = size(KBhw′); BN = B*N
     mi_3d = reshape(m.me(mp),(d,B,1))
     ImKB  = reshape(mi_3d .* KBhw′,(d,BN)) # eq r1.2
-    ImKB′ = reshape(m.activation(m.Ime*ImKB .+ KBhw′′),(d,B,N)) #eq r2
+    ImKB′ = reshape(elu.(m.Ime*ImKB .+ KBhw′′),(d,B,N)) #eq r2
     ci_3d = reshape(ci,(d,B,1))
-    IcmKB_pre = m.activation(reshape(ci_3d .* ImKB′,(d,BN))) #eq r3.1.1
+    IcmKB_pre = elu.(reshape(ci_3d .* ImKB′,(d,BN))) #eq r3.1.1
     IcmKB_pre = m.drop(IcmKB_pre)
     IcmKB = reshape(m.att(IcmKB_pre),(B,N)) #eq r3.1.2
     mvi = reshape(softmax(IcmKB,dims=2),(1,B,N)) #eq r3.2
@@ -147,7 +145,7 @@ function (m::Read)(mp,ci,cws,KBhw′,KBhw′′;train=false,tap=nothing)
 end
 Read(d::Int) = Read(Linear(input=d,output=d),Linear(input=d,output=d),
                     Linear(input=d,output=d),param(d,d; atype=arrtype, init=xavier),
-                    Linear(input=d,output=1), Dropout(0.15), ELU())
+                    Linear(input=d,output=1), Dropout(0.15))
 
 struct Write  <: Model
     me::Linear
@@ -155,7 +153,6 @@ struct Write  <: Model
     att::Union{Linear,Nothing}
     mpp
     gating::Union{Linear,Nothing}
-    activation::Activation
 end
 
 function (m::Write)(m_new,mi₋1,mj,ci,cj;train=false,selfattn=true,gating=true,tap=nothing)
@@ -173,7 +170,7 @@ function (m::Write)(m_new,mi₋1,mj,ci,cj;train=false,selfattn=true,gating=true,
     mi_sa      = reshape(sum(sa′ .* mj_3d;dims=3),(d,B))
     mi′′       = m.mpp*mi_sa .+ mi #eq w2.3
     !gating && return mi′′
-    σci′       = m.activation(m.gating(ci))  #eq w3.1
+    σci′       = sigm.(m.gating(ci))  #eq w3.1
     mi′′′      = (σci′ .* mi₋1) .+  ((1 .- σci′) .* mi′′) #eq w3.2
 end
 
@@ -182,14 +179,14 @@ function Write(d::Int;selfattn=true,gating=true)
         if gating
             Write(Linear(input=2d,output=d),Linear(input=d,output=d),
                   Linear(input=d,output=1),param(d,d;atype=arrtype, init=xavier),
-                  Linear(input=d,output=1),Sigm())
+                  Linear(input=d,output=1))
         else
             Write(Linear(input=2d,output=d),Linear(input=d,output=d),
                   Linear(input=d,output=1),param(d,d;atype=arrtype, init=xavier),
-                  nothing,Sigm())
+                  nothing)
         end
     else
-        Write(Linear(input=2d,output=d),nothing,nothing,nothing,nothing,Sigm())
+        Write(Linear(input=2d,output=d),nothing,nothing,nothing,nothing)
     end
 end
 
@@ -207,18 +204,16 @@ end
 MAC(d::Int;selfattn=false,gating=false) = MAC(Control(d),Read(d),Write(d))
 
 struct Output <: Model
-    qe::Linear
-    l1::Linear
+    qe::Dense
+    l1::Dense
     l2::Linear
-    activation::Activation
 end
 
-function (m::Output)(q,mp;train=false)
-  qe = m.activation(m.qe(q))
-  x  = m.activation(m.l1(cat(qe,mp;dims=1)))
-  m.l2(x)
-end
-Output(d::Int) = Output(Linear(input=2d,output=d),Linear(input=2d,output=d),Linear(input=d,output=28), ELU())
+(m::Output)(q,mp) = m.l2(m.l1(cat(m.qe(q),mp;dims=1)))
+
+Output(d::Int) = Output(Dense(input=2d,output=d,activation=ELU()),
+                        Dense(input=2d,output=d,activation=ELU()),
+                        Linear(input=d,output=28))
 
 struct MACNetwork <: Model
     resnet::ResNet
@@ -265,7 +260,7 @@ function (M::MACNetwork)(qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
         tap!=nothing && (tap["cnt"]+=1)
     end
 
-    y = M.output(q,mi;train=train)    
+    y = M.output(q,mi)    
 
     if answers==nothing
         predmat = convert(Array{Float32},y)
@@ -274,7 +269,7 @@ function (M::MACNetwork)(qs,batchSizes,xS,xB,xP;answers=nothing,p=12,selfattn=fa
         if allsteps
             outputs = []
             for i=1:p-1
-                yi = M.output(q,mj[i];train=train)
+                yi = M.output(q,mj[i])
                 yi = convert(Array{Float32},yi)
                 push!(outputs,mapslices(argmax,yi,dims=1)[1,:])
             end
