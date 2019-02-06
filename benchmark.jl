@@ -2,6 +2,7 @@ import Pkg; Pkg.activate("."); Pkg.instantiate();
 include("configs/config2.jl")
 include("src/main.jl")
 #MODEL
+@show arrtype
 M    = MACNetwork(o);
 Knet.gc()
 #FEATS
