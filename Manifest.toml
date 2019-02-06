@@ -286,12 +286,14 @@ version = "0.20.0"
 [[Knet]]
 deps = ["AutoGrad", "CUDAapi", "Dates", "DelimitedFiles", "FileIO", "JLD2", "Libdl", "LinearAlgebra", "Pkg", "Printf", "Random", "SpecialFunctions", "Statistics", "Test", "TimerOutputs"]
 git-tree-sha1 = "56de50ad17484bef2c4fea9048a722513d8dceed"
+pinned = true
 uuid = "1902f260-5fb4-5aff-8c31-6271790ab950"
 version = "1.2.0"
 
 [[KnetLayers]]
 deps = ["AutoGrad", "Knet", "Statistics"]
 git-tree-sha1 = "a27bcc2e5c1efad65221b10ff738fccabf981b0e"
+pinned = true
 repo-rev = "master"
 repo-url = "https://github.com/ekinakyurek/KnetLayers.jl.git"
 uuid = "80bfaf46-ad8a-11e8-19eb-a135e382307b"
