@@ -1,6 +1,7 @@
 using ImageMagick, Images
-using AutoGrad, Knet, KnetLayers, JSON, HDF5, Plots
+using AutoGrad, Knet, KnetLayers, JSON, Plots
 using Printf,Random
+#using HDF5
 
 include("model.jl")
 savemodel(filename,m,mrun,o) = Knet.save(filename,"m",m,"mrun",mrun,"o",o)
